@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::{debug, info};
+use log::{debug, info, trace};
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -19,7 +19,7 @@ impl Runtime {
     }
 
     pub fn start(&self, ctx: &RefContext, cfg: Arc<Config>) -> anyhow::Result<JoinHandle<()>> {
-        let mut node_table = NodeTable::new();
+        let mut node_table = NodeTable::new(cfg.clone());
         // 启动discover
         let discover_ctx = ctx.clone();
         let mut discover_rev = start_discover(&discover_ctx, cfg.clone())?;
@@ -27,9 +27,9 @@ impl Runtime {
         let cfg_copy = cfg.clone();
         let ctx = ctx.clone();
         let handler = tokio::spawn(async move {
-            debug!("Runtime thread startup");
+            info!("Runtime thread startup");
             let (mut ctx, _handler) = Context::with_parent(&ctx, None);
-            let mut timeout_interval = interval(cfg_copy.disc_multicast_timout.clone());
+            let mut timeout_interval = interval(cfg_copy.disc_multicast_ttl_check_interval.clone());
             timeout_interval.tick().await;
             loop {
                 select! {
@@ -41,7 +41,7 @@ impl Runtime {
                     _ = timeout_interval.tick() => {
                         if let Ok(prune_cnt) = node_table.prune() {
                             if prune_cnt > 0 {
-                                info!("Prune complate, remove node count {}", prune_cnt);
+                                info!("Prune complete, remove node count {}", prune_cnt);
                             }
                         }
                     }
@@ -59,7 +59,7 @@ async fn on_ping_node(
 ) -> anyhow::Result<()> {
     if let Some(recv) = rev {
         if let Some(msg) = recv.recv().await {
-            debug!("Rev other node ping {:?}", &msg);
+            trace!("Rev other node ping {:?}", &msg);
             node_table.ping(msg)?;
         }
     }

@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::{
     net::UdpSocket,
@@ -63,10 +63,10 @@ impl Discover {
         // 发送组播消息的任务
         let socket_ref = socket.clone();
         let my_id_copy = self.node_id.clone();
-        let interval_duration = cfg.disc_multicast_interval_duration.clone();
+        let interval_duration = cfg.disc_multicast_interval.clone();
         let ctx = parent_ctx.clone();
         tokio::spawn(async move {
-            debug!("Multicast thread startup {}", &multicast_addr);
+            info!("Multicast thread startup {}", &multicast_addr);
             let (mut ctx, _handler) = Context::with_parent(&ctx, None);
             let mut timeout_interval = interval(interval_duration);
             let message = my_id_copy.as_bytes();
@@ -90,7 +90,7 @@ impl Discover {
         let (tx, rx) = tokio::sync::mpsc::channel(16);
         let ctx = parent_ctx.clone();
         tokio::spawn(async move {
-            debug!("Listener thread startup");
+            info!("Listener thread startup");
             let (mut ctx, _handler) = Context::with_parent(&ctx, None);
             let mut buf = [0; 1024];
             loop {
@@ -99,9 +99,10 @@ impl Discover {
                         debug!("Listener thread shutdown");
                         break;
                     },
-                    Some(node) = recv_from_other_node(&socket_ref, &my_id_copy, &mut buf) => {
-                        info!("Find other node {:?}", node);
-                        // register.notify(node).await
+                    Some(node) = recv_from_other_node(socket_ref.clone(), &my_id_copy, &mut buf) => {
+                        if !node.is_self {
+                            trace!("From other node {:?}", &node);
+                        }
                         if let Err(err) = tx.send(node).await {
                             error!("send node message error {:?}", err);
                         }
@@ -125,19 +126,18 @@ async fn mutilcast_to_other_node(
         .send_to(message, multicast_addr)
         .await
         .expect("Failed to send");
-    debug!("Send ping success");
+    trace!("Send ping success");
 }
 
 async fn recv_from_other_node(
-    socket_ref: &UdpSocket,
+    socket_ref: Arc<UdpSocket>,
     my_id_copy: &str,
     buf: &mut [u8],
 ) -> Option<Node> {
     let (len, addr) = socket_ref.recv_from(buf).await.expect("Failed to receive");
     let msg = String::from_utf8_lossy(&buf[..len]);
-    debug!("recv node ping msg {}", msg);
-    if msg == my_id_copy {
-        return None;
-    }
-    Some(Node::new(addr.to_string(), String::from(my_id_copy), false))
+    let msg = msg.to_string();
+    trace!("recv node ping msg {}", &msg);
+    let is_self = msg == my_id_copy;
+    Some(Node::new(addr.to_string(), msg, is_self))
 }

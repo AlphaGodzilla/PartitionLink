@@ -1,5 +1,7 @@
+use std::sync::Arc;
 use ahash::{HashMap, HashMapExt};
 use log::info;
+use crate::config::Config;
 
 use crate::until::{self, now_ts};
 
@@ -18,13 +20,15 @@ impl Node {
 
 #[derive(Clone)]
 pub struct NodeTable {
-    nodes: HashMap<String, String>,
+    cfg: Arc<Config>,
+    nodes: HashMap<String, Node>,
     expire_until: HashMap<String, u128>,
 }
 
 impl NodeTable {
-    pub fn new() -> Self {
+    pub fn new(cfg: Arc<Config>) -> Self {
         NodeTable {
+            cfg,
             nodes: HashMap::new(),
             expire_until: HashMap::new(),
         }
@@ -32,30 +36,36 @@ impl NodeTable {
 
     pub fn ping(&mut self, node: Node) -> anyhow::Result<()> {
         let id = String::from(&node.id);
-        let addr = String::from(&node.addr);
-        self.nodes.insert(id, addr);
-        let now = now_ts()?;
-        let id = String::from(&node.id);
-        self.expire_until.insert(id, now);
+        let id_copy = id.clone();
+        if !self.nodes.contains_key(&id) {
+            info!("Find new {:?}", &node);
+            self.nodes.insert(id, node);
+            info!("Current Nodes: {:?}", self.nodes)
+        }
+        let until = now_ts()? + self.cfg.disc_multicast_ttl.as_millis();
+        self.expire_until.insert(id_copy, until);
         Ok(())
     }
 
     pub fn exist(&self, id: &str) -> anyhow::Result<bool> {
-        let now = until::now_ts()?;
+        let now = now_ts()?;
         Ok(self.nodes.contains_key(id) && self.expire_until.get(id).unwrap_or(&0) > &now)
     }
 
     pub fn prune(&mut self) -> anyhow::Result<usize> {
-        let now = until::now_ts()?;
+        let now = now_ts()?;
         let mut count = 0;
         for (id, ts) in self.expire_until.iter() {
             if ts < &now {
                 self.nodes.remove(id);
                 count += 1;
-                info!("Node {} disconnect, remove from nodeTable", id)
+                info!("Node {} disconnect, remove", id);
+                info!("Current Nodes: {:?}", self.nodes);
             }
         }
-        self.expire_until.retain(|_key, &mut ts| ts < now);
+        if count > 0 {
+            self.expire_until.retain(|_key, &mut ts| ts > now);
+        }
         Ok(count)
     }
 }
