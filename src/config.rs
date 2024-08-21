@@ -8,6 +8,10 @@ pub struct Config {
     pub disc_multicast_ttl: Duration,
     // 节点存活过期检查任务执行间隔
     pub disc_multicast_ttl_check_interval: Duration,
+    pub listen_port: usize,
+    pub listen_addr: String,
+    // 命令缓冲区大小, 单位为字节
+    pub cmd_buff_size: usize,
 }
 
 impl Config {
@@ -18,6 +22,9 @@ impl Config {
             disc_multicast_interval: Duration::from_secs(10),
             disc_multicast_ttl: Duration::from_secs(30),
             disc_multicast_ttl_check_interval: Duration::from_secs(10),
+            listen_port: 7111,
+            listen_addr: String::from("0.0.0.0"),
+            cmd_buff_size: 1024,
         }
     }
 }

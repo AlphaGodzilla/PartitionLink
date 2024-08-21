@@ -6,6 +6,8 @@ use runtime::Runtime;
 use tokio::{select, signal};
 use tokio_context::context::RefContext;
 
+mod cmd_server;
+mod command;
 mod config;
 mod db;
 mod discover;
@@ -23,13 +25,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (ctx, ctx_handler) = RefContext::new();
 
-    let handler = rt.start(&ctx, cfg.clone())?;
+    let (discover_handler, command_handler) = rt.start(&ctx, cfg.clone())?;
 
     shutdown_signal().await;
 
     ctx_handler.cancel();
 
-    handler.await?;
+    discover_handler.await?;
+    command_handler.await?;
 
     Ok(())
 }

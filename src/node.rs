@@ -1,20 +1,44 @@
-use std::sync::Arc;
+use crate::config::Config;
 use ahash::{HashMap, HashMapExt};
 use log::info;
-use crate::config::Config;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::until::{self, now_ts};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NodeMsg {
+    pub id: String,
+    pub addr: String,
+    pub port: usize,
+}
+
+impl NodeMsg {
+    pub fn new(id: &str, addr: &str, port: usize) -> Self {
+        NodeMsg {
+            id: String::from(id),
+            addr: String::from(addr),
+            port,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Node {
     pub addr: String,
     pub id: String,
+    pub port: usize,
     pub is_self: bool,
 }
 
 impl Node {
-    pub fn new(addr: String, id: String, is_self: bool) -> Self {
-        Node { addr, id, is_self }
+    pub fn new(addr: &str, id: &str, port: usize, is_self: bool) -> Self {
+        Node {
+            id: String::from(id),
+            addr: String::from(addr),
+            port,
+            is_self,
+        }
     }
 }
 
@@ -38,9 +62,8 @@ impl NodeTable {
         let id = String::from(&node.id);
         let id_copy = id.clone();
         if !self.nodes.contains_key(&id) {
-            info!("Find new {:?}", &node);
+            info!("New Node {}", serde_json::to_string(&node)?);
             self.nodes.insert(id, node);
-            info!("Current Nodes: {:?}", self.nodes)
         }
         let until = now_ts()? + self.cfg.disc_multicast_ttl.as_millis();
         self.expire_until.insert(id_copy, until);

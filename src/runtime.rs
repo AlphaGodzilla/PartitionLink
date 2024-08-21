@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tokio_context::context::{Context, RefContext};
 
+use crate::cmd_server::start_cmd_server;
 use crate::node::{Node, NodeTable};
 use crate::{config::Config, discover::Discover};
 
@@ -18,23 +19,26 @@ impl Runtime {
         Runtime {}
     }
 
-    pub fn start(&self, ctx: &RefContext, cfg: Arc<Config>) -> anyhow::Result<JoinHandle<()>> {
+    pub fn start(
+        &self,
+        ctx: &RefContext,
+        cfg: Arc<Config>,
+    ) -> anyhow::Result<(JoinHandle<()>, JoinHandle<()>)> {
         let mut node_table = NodeTable::new(cfg.clone());
         // 启动discover
         let discover_ctx = ctx.clone();
         let mut discover_rev = start_discover(&discover_ctx, cfg.clone())?;
-        // 启动runtime线程
         let cfg_copy = cfg.clone();
-        let ctx = ctx.clone();
-        let handler = tokio::spawn(async move {
-            info!("Runtime thread startup");
-            let (mut ctx, _handler) = Context::with_parent(&ctx, None);
+        let ctx_copy = ctx.clone();
+        let discover_handler = tokio::spawn(async move {
+            info!("Discover thread startup");
+            let (mut ctx, _handler) = Context::with_parent(&ctx_copy, None);
             let mut timeout_interval = interval(cfg_copy.disc_multicast_ttl_check_interval.clone());
             timeout_interval.tick().await;
             loop {
                 select! {
                     _ = ctx.done() => {
-                        debug!("Runtime thread shutdown");
+                        debug!("Discover thread shutdown");
                         break;
                     },
                     _ = on_ping_node(&mut discover_rev, &mut node_table) => {},
@@ -48,8 +52,17 @@ impl Runtime {
                 }
             }
         });
-        info!("Startup successful");
-        Ok(handler)
+        // 启动cmd server
+        let ctx_copy = ctx.clone();
+        let cfg_copy = cfg.clone();
+        let cmd_server_handler = tokio::spawn(async move {
+            info!("Command server thread startup");
+            if let Err(err) = start_cmd_server(ctx_copy, cfg_copy).await {
+                error!("Start command server thread error {:?}", err);
+            }
+        });
+        // info!("Startup successful");
+        Ok((discover_handler, cmd_server_handler))
     }
 }
 

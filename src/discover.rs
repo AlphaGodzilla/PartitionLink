@@ -4,6 +4,7 @@ use std::{
 };
 
 use log::{debug, error, info, trace};
+use serde_json::json;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::{
     net::UdpSocket,
@@ -12,7 +13,10 @@ use tokio::{
 use tokio_context::context::{Context, RefContext};
 use uuid::Uuid;
 
-use crate::{config::Config, node::Node};
+use crate::{
+    config::Config,
+    node::{Node, NodeMsg},
+};
 
 pub struct Discover {
     cfg: Arc<Config>,
@@ -65,11 +69,13 @@ impl Discover {
         let my_id_copy = self.node_id.clone();
         let interval_duration = cfg.disc_multicast_interval.clone();
         let ctx = parent_ctx.clone();
+        let node_msg = NodeMsg::new(&my_id_copy, "", self.cfg.listen_port);
+        let node_msg = serde_json::to_string(&node_msg)?;
         tokio::spawn(async move {
             info!("Multicast thread startup {}", &multicast_addr);
             let (mut ctx, _handler) = Context::with_parent(&ctx, None);
             let mut timeout_interval = interval(interval_duration);
-            let message = my_id_copy.as_bytes();
+            let message = node_msg.as_bytes();
             loop {
                 tokio::select! {
                     _ = ctx.done() => {
@@ -138,6 +144,19 @@ async fn recv_from_other_node(
     let msg = String::from_utf8_lossy(&buf[..len]);
     let msg = msg.to_string();
     trace!("recv node ping msg {}", &msg);
-    let is_self = msg == my_id_copy;
-    Some(Node::new(addr.to_string(), msg, is_self))
+    match serde_json::from_str::<NodeMsg>(&msg) {
+        Ok(msg) => {
+            let is_self = msg.id == my_id_copy;
+            Some(Node::new(
+                &addr.ip().to_string(),
+                &msg.id,
+                msg.port,
+                is_self,
+            ))
+        }
+        Err(err) => {
+            error!("handle node ping message error {:?}", err);
+            None
+        }
+    }
 }
