@@ -12,6 +12,7 @@ mod config;
 mod db;
 mod discover;
 mod node;
+mod protocol;
 mod runtime;
 mod until;
 

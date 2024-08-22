@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{io::Cursor, sync::Arc};
 
+use bytes::BytesMut;
 use log::{debug, error, info};
 use tokio::{
     io::AsyncReadExt,
@@ -8,7 +9,55 @@ use tokio::{
 };
 use tokio_context::context::{Context, RefContext};
 
-use crate::config::Config;
+use crate::{config::Config, protocol::Frame};
+
+pub struct Connection {
+    stream: TcpStream,
+    buffer: BytesMut,
+}
+
+impl Connection {
+    pub fn new(stream: TcpStream) -> Self {
+        Connection {
+            stream,
+            buffer: BytesMut::new(),
+        }
+    }
+
+    /// Read a frame from the connection.
+    ///
+    /// Returns `None` if EOF is reached
+    pub async fn read_frame(&mut self) -> anyhow::Result<Option<Frame>> {
+        loop {
+            if let Some(frame) = self.parse_frame()? {
+                return Ok(Some(frame));
+            }
+
+            if 0 == self.stream.read_buf(&mut self.buffer).await? {
+                // The remote closed the connection. For this to be
+                // a clean shutdown, there should be no data in the
+                // read buffer. If there is, this means that the
+                // peer closed the socket while sending a frame.
+                if self.buffer.is_empty() {
+                    return Ok(None);
+                } else {
+                    return Err(anyhow::anyhow!("connection reset by peer"));
+                }
+            }
+        }
+    }
+
+    pub fn parse_frame(&mut self) -> anyhow::Result<Option<Frame>> {
+        let mut buf = Cursor::new(&self.buffer[..]);
+        todo!()
+    }
+
+    /// Write a frame to the connection.
+    pub async fn write_frame(&mut self, frame: &Frame) -> anyhow::Result<()> {
+        // implementation here
+        todo!()
+    }
+}
 
 pub async fn start_cmd_server(ctx: RefContext, cfg: Arc<Config>) -> anyhow::Result<()> {
     let addr = String::from(&cfg.listen_addr);
