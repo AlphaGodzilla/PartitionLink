@@ -1,6 +1,6 @@
 use std::{io::Cursor, sync::Arc};
 
-use bytes::BytesMut;
+use bytes::{Buf, BytesMut};
 use log::{debug, error, info};
 use tokio::{
     io::AsyncReadExt,
@@ -9,7 +9,10 @@ use tokio::{
 };
 use tokio_context::context::{Context, RefContext};
 
-use crate::{config::Config, protocol::Frame};
+use crate::{
+    config::Config,
+    protocol::{Frame, FrameMatchResult},
+};
 
 pub struct Connection {
     stream: TcpStream,
@@ -49,7 +52,19 @@ impl Connection {
 
     pub fn parse_frame(&mut self) -> anyhow::Result<Option<Frame>> {
         let mut buf = Cursor::new(&self.buffer[..]);
-        todo!()
+        match Frame::check(&mut buf) {
+            Ok(state) => match state {
+                FrameMatchResult::Complete => {
+                    let len = buf.position() as usize;
+                    buf.set_position(0);
+                    let frame = Frame::parse(&mut buf)?;
+                    self.buffer.advance(len);
+                    Ok(Some(frame))
+                }
+                FrameMatchResult::Incomplete | FrameMatchResult::MissMatch => Ok(None),
+            },
+            Err(err) => Err(err.into()),
+        }
     }
 
     /// Write a frame to the connection.
@@ -153,28 +168,4 @@ async fn read_stream(stream: &mut TcpStream, buff: &mut [u8]) -> anyhow::Result<
 }
 
 #[cfg(test)]
-mod test {
-    use tokio::fs::File;
-    use tokio::io::{self, AsyncReadExt};
-
-    use bytes::BytesMut;
-
-    #[tokio::test]
-    async fn main() -> io::Result<()> {
-        let mut f = File::open("/Users/user/Desktop/763_rev6.json").await?;
-        let mut buffer = BytesMut::with_capacity(10);
-
-        assert!(buffer.is_empty());
-        assert!(buffer.capacity() >= 10);
-
-        // note that the return value is not needed to access the data
-        // that was read as `buffer`'s internal cursor is updated.
-        //
-        // this might read more than 10 bytes if the capacity of `buffer`
-        // is larger than 10.
-        let size = f.read_buf(&mut buffer).await?;
-        println!("The bytes: {:?}", &buffer[..]);
-        println!("The bytes read size: {}", size);
-        Ok(())
-    }
-}
+mod test {}
