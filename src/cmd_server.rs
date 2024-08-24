@@ -1,7 +1,7 @@
 use std::{io::Cursor, sync::Arc};
 
 use bytes::{Buf, BytesMut};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
@@ -10,8 +10,9 @@ use tokio::{
 use tokio_context::context::{Context, RefContext};
 
 use crate::{
+    command::Command,
     config::Config,
-    protocol::{Frame, FrameMatchResult},
+    protocol::{Frame, FrameMatchResult, Operator},
 };
 
 pub struct Connection {
@@ -52,16 +53,26 @@ impl Connection {
 
     pub fn parse_frame(&mut self) -> anyhow::Result<Option<Frame>> {
         let mut buf = Cursor::new(&self.buffer[..]);
+        trace!("before check buff: {:?}", &self.buffer[..]);
         match Frame::check(&mut buf) {
             Ok(state) => match state {
                 FrameMatchResult::Complete => {
-                    let len = buf.position() as usize;
+                    trace!("Complete, matched frame success");
                     buf.set_position(0);
                     let frame = Frame::parse(&mut buf)?;
+                    let len = buf.position() as usize;
                     self.buffer.advance(len);
+                    trace!("got frame {:?}", &frame);
                     Ok(Some(frame))
                 }
-                FrameMatchResult::Incomplete | FrameMatchResult::MissMatch => Ok(None),
+                FrameMatchResult::Incomplete(reason) => {
+                    trace!("Incomplete, reason={}", reason);
+                    Ok(None)
+                }
+                FrameMatchResult::MissMatch(reason) => {
+                    trace!("MissMatch: reason={}", reason);
+                    Ok(None)
+                }
             },
             Err(err) => Err(err.into()),
         }
@@ -105,9 +116,9 @@ async fn accept(ctx: RefContext, cfg: Arc<Config>, tcp_listener: &TcpListener) {
             let ctx = ctx.clone();
             // 在另外的线程进行处理
             tokio::spawn(async move {
-                debug!("start conn {}", &addr);
+                debug!("new connect {}", &addr);
                 connection(ctx, cfg, socket).await;
-                debug!("discon conn {}", &addr);
+                debug!("disconnect {}", &addr);
             });
         }
         Err(err) => {
@@ -116,35 +127,28 @@ async fn accept(ctx: RefContext, cfg: Arc<Config>, tcp_listener: &TcpListener) {
     };
 }
 
-async fn connection(ctx: RefContext, cfg: Arc<Config>, mut stream: TcpStream) {
+async fn connection(ctx: RefContext, cfg: Arc<Config>, stream: TcpStream) {
     let (mut ctx, _handler) = Context::with_parent(&ctx, None);
-    let mut cmd_batch: Vec<u8> = Vec::with_capacity(cfg.cmd_buff_size * 2);
-    let mut buff = [0; 512];
+    let mut conn = Connection::new(stream);
     loop {
         select! {
             _ = ctx.done() => {
                 break;
             },
-            result = read_stream(&mut stream, &mut buff) => {
-                match result {
-                    Ok(n) => {
-                        if n == 0 {
-                            break;
+            cmd_result = read_cmd(&mut conn) => {
+                match cmd_result {
+                    Ok(cmd_opt) => {
+                        match cmd_opt {
+                            Some(cmd) => {
+                                debug!("Recv Command: {:?}", cmd);
+                                // TODO: execute Command
+                            }
+                            None => {
+                                // remote close connection
+                                break;
+                            }
                         }
-                        if cmd_batch.len() > cfg.cmd_buff_size {
-                            break;
-                        }
-                        if n > 0 {
-                            cmd_batch.extend_from_slice(&buff[..n]);
-                        }
-                        if (cmd_batch.len() <= cfg.cmd_buff_size) {
-                            // 解析命令
-                            // 执行命令
-                            let body = String::from_utf8_lossy(&cmd_batch[..]);
-                            info!("Recv Command: {}", body);
-                            cmd_batch.clear();
-                            cmd_batch.shrink_to_fit();
-                        }
+
                     }
                     Err(err) => {
                         error!("read data error {:?}", err);
@@ -156,15 +160,47 @@ async fn connection(ctx: RefContext, cfg: Arc<Config>, mut stream: TcpStream) {
     }
 }
 
-async fn read_stream(stream: &mut TcpStream, buff: &mut [u8]) -> anyhow::Result<usize> {
-    stream.readable().await?;
-    match stream.read(buff).await {
-        Ok(n) => Ok(n),
-        Err(err) => {
-            error!("Error reading data {:?}", err);
-            Ok(0)
+async fn read_cmd(conn: &mut Connection) -> anyhow::Result<Option<Command>> {
+    let mut frames: Vec<Frame> = Vec::with_capacity(1);
+    let mut op: Operator = Operator::UNKNOWN;
+    loop {
+        match conn.read_frame().await? {
+            Some(frame) => {
+                if op == Operator::UNKNOWN {
+                    op = frame.op.clone();
+                }
+                if frame.is_last() {
+                    frames.push(frame);
+                    return Ok(Some(parse_cmd(&frames)));
+                }
+                if frame.op != op {
+                    // different kind frame
+                    return Err(anyhow::anyhow!("different kind frame"));
+                }
+                frames.push(frame);
+            }
+            None => {
+                break;
+            }
         }
     }
+    Ok(None)
+}
+
+fn parse_cmd(frames: &[Frame]) -> Command {
+    let capacity: usize = frames.iter().map(|i| i.length.inner_value() as usize).sum();
+    let mut payload = Vec::with_capacity(capacity as usize);
+    // concat payload
+    for frame in frames {
+        payload.extend_from_slice(&frame.payload);
+    }
+    trace!(
+        "before decode payload, frames_len={}, capacity={}, payload={:?}",
+        frames.len(),
+        capacity,
+        &payload
+    );
+    payload.into()
 }
 
 #[cfg(test)]

@@ -3,6 +3,14 @@ name = "PartitionLink"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "server"
+path = "src/server.rs"
+
+[[bin]]
+name = "client"
+path = "src/client.rs"
+
 [dependencies]
 ahash = "0.8.11"
 anyhow = { version = "1.0.86", features = ["std", "backtrace"] }

@@ -1,8 +1,13 @@
 use std::io::Cursor;
+use std::io::Read;
 
 use crate::protocol::Bit::ONE;
 use crate::protocol::Bit::ZERO;
 use bytes::Buf;
+use bytes::Bytes;
+use bytes::{BufMut, BytesMut};
+use log::debug;
+use log::trace;
 
 // 协议设计
 // Magic(8) + HEAD(1) + VERSION(3) + OPERATOR(4) + Length(8) + <CONTENT...>
@@ -13,14 +18,6 @@ const MAGIC_PREFIX: u8 = 0xff;
 pub enum Bit {
     ONE,
     ZERO,
-}
-impl Bit {
-    pub fn val(&self) -> bool {
-        match self {
-            Bit::ONE => true,
-            Bit::ZERO => false,
-        }
-    }
 }
 
 pub struct BitVec(Vec<Bit>);
@@ -36,7 +33,7 @@ impl BitVec {
             self_vec_copy.extend_from_slice(&self.0[..]);
             return to_byte(&self_vec_copy[..], 0);
         }
-        let u8_slice = &self.0[0..8];
+        let u8_slice = &self.0[(len - 8)..];
         to_byte(u8_slice, 0)
     }
 
@@ -53,20 +50,19 @@ impl From<u8> for BitVec {
 pub fn to_bit_vec(value: u32, bit_size: usize) -> Vec<Bit> {
     let mut bits = Vec::with_capacity(bit_size);
     let mut copy = value.clone();
-    for i in 0..bit_size {
+    for _ in 0..bit_size {
         if copy == 0 {
-            bits.push(ZERO);
+            bits.insert(0, ZERO);
             continue;
         }
         if copy & 1 != 0 {
-            bits.push(ONE);
+            bits.insert(0, ONE);
             copy = copy >> 1;
         } else {
-            bits.push(ZERO);
+            bits.insert(0, ZERO);
             copy = copy >> 1;
         }
     }
-    bits.reverse();
     bits
 }
 
@@ -95,6 +91,7 @@ pub trait Segment {
     fn value(&self) -> Vec<Bit>;
 }
 
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Head {
     UNFIN,
     FIN,
@@ -134,6 +131,7 @@ impl Segment for Padding {
     }
 }
 
+#[derive(Debug)]
 pub struct Version {
     inner: u8,
 }
@@ -189,49 +187,57 @@ impl Segment for Operator {
     }
 }
 
-pub struct Length(u32);
+#[derive(Debug)]
+pub struct Length(u8);
 
 impl Length {
-    pub fn new(value: u32) -> Self {
+    pub fn new(value: u8) -> Self {
         Length(value)
+    }
+
+    pub fn inner_value(&self) -> u8 {
+        self.0
     }
 }
 
 impl Segment for Length {
     fn bits() -> usize {
-        size_of::<u32>()
+        size_of::<u8>()
     }
 
     fn value(&self) -> Vec<Bit> {
-        to_bit_vec(self.0, Self::bits())
+        to_bit_vec(self.0 as u32, Self::bits())
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FrameMatchResult {
-    Incomplete,
-    MissMatch,
+pub enum FrameMatchResult<'a> {
+    Incomplete(&'a str),
+    MissMatch(&'a str),
     Complete,
 }
 
+#[derive(Debug)]
 pub struct Frame {
-    head: Head,
-    version: Version,
-    cmd: Operator,
-    length: Length,
-    payload: Vec<u8>,
+    pub head: Head,
+    pub version: Version,
+    pub op: Operator,
+    pub length: Length,
+    pub payload: Vec<u8>,
+    encode_raw: Option<Bytes>,
 }
 impl Frame {
     pub fn new() -> Self {
         Frame {
             head: Head::FIN,
             version: Version::new(1).expect("version constract error"),
-            cmd: Operator::OP,
+            op: Operator::OP,
             length: Length::new(0),
             payload: Vec::new(),
+            encode_raw: None,
         }
     }
 
-    pub fn set_head(&mut self, head: Head) -> &Frame {
+    pub fn set_head(&mut self, head: Head) -> &mut Frame {
         self.head = head;
         self
     }
@@ -241,19 +247,37 @@ impl Frame {
     //     self
     // }
 
-    pub fn set_cmd(&mut self, cmd: Operator) -> &Frame {
-        self.cmd = cmd;
+    pub fn set_op(&mut self, cmd: Operator) -> &mut Frame {
+        self.op = cmd;
         self
     }
 
-    pub fn set_length(&mut self, length: Length) -> &Frame {
+    pub fn set_length(&mut self, length: Length) -> &mut Frame {
         self.length = length;
         self
     }
 
-    pub fn set_payload(&mut self, payload: Vec<u8>) -> &Frame {
+    pub fn set_payload(&mut self, payload: Vec<u8>) -> &mut Frame {
         self.payload = payload;
         self
+    }
+
+    pub fn encode(&mut self) -> &[u8] {
+        if self.encode_raw.is_some() {
+            return self.encode_raw.as_ref().unwrap();
+        }
+        let mut buff = BytesMut::new();
+        buff.put_u8(MAGIC_PREFIX);
+        let mut header = Vec::with_capacity(8);
+        header.extend_from_slice(&self.head.value()[..]);
+        header.extend_from_slice(&self.version.value()[..]);
+        header.extend_from_slice(&self.op.value()[..]);
+        let header = BitVec(header).to_byte().unwrap();
+        buff.put_u8(header);
+        buff.put_u8(self.length.inner_value());
+        self.payload.iter().for_each(|b| buff.put_u8(*b));
+        self.encode_raw = Some(buff.freeze());
+        self.encode_raw.as_ref().unwrap()
     }
 
     pub fn parse(cursor: &mut Cursor<&[u8]>) -> anyhow::Result<Frame> {
@@ -271,10 +295,10 @@ impl Frame {
         let mut command = Vec::with_capacity(Operator::bits());
         command.extend_from_slice(command_vec);
         let command: Operator = BitVec(command).to_byte()?.into();
-        frame.set_cmd(command);
+        frame.set_op(command);
 
         let length: u8 = cursor.get_u8();
-        frame.set_length(Length(length as u32));
+        frame.set_length(Length(length));
 
         let mut payload = Vec::with_capacity(length as usize);
         for _ in 0..length {
@@ -286,21 +310,22 @@ impl Frame {
         Ok(frame)
     }
 
-    pub fn check(cursor: &mut Cursor<&[u8]>) -> anyhow::Result<FrameMatchResult> {
+    pub fn check<'a>(cursor: &mut Cursor<&[u8]>) -> anyhow::Result<FrameMatchResult<'a>> {
         // check magic
         let has_remain = cursor.has_remaining();
         if !has_remain {
-            return Ok(FrameMatchResult::Incomplete);
+            return Ok(FrameMatchResult::Incomplete("no_data"));
         }
         let magic_prefix: u8 = cursor.get_u8();
         if magic_prefix != MAGIC_PREFIX {
-            return Ok(FrameMatchResult::MissMatch);
+            trace!("magic, {}", magic_prefix);
+            return Ok(FrameMatchResult::MissMatch("magic"));
         }
 
         // check header
         let has_remain = cursor.has_remaining();
         if !has_remain {
-            return Ok(FrameMatchResult::Incomplete);
+            return Ok(FrameMatchResult::Incomplete("header"));
         }
         let header = cursor.get_u8();
         let header: BitVec = header.into();
@@ -311,8 +336,8 @@ impl Frame {
         let mut version = Vec::with_capacity(Head::bits());
         version.extend_from_slice(version_vec);
         let version: u8 = BitVec(version).to_byte()?;
-        if (version != 1) {
-            return Ok(FrameMatchResult::MissMatch);
+        if version != 1 {
+            return Ok(FrameMatchResult::MissMatch("version"));
         }
 
         // checke command
@@ -321,13 +346,13 @@ impl Frame {
         command.extend_from_slice(command_vec);
         let command: Operator = BitVec(command).to_byte()?.into();
         if command == Operator::UNKNOWN {
-            return Ok(FrameMatchResult::MissMatch);
+            return Ok(FrameMatchResult::MissMatch("op"));
         }
 
         // check length
         let has_remain = cursor.has_remaining();
         if !has_remain {
-            return Ok(FrameMatchResult::Incomplete);
+            return Ok(FrameMatchResult::Incomplete("length"));
         }
         let length: u8 = cursor.get_u8();
         if length > 0 {
@@ -338,10 +363,14 @@ impl Frame {
             let remian_len = len - pos;
             if remian_len != (length as usize) {
                 // payload长度不符合
-                return Ok(FrameMatchResult::Incomplete);
+                return Ok(FrameMatchResult::MissMatch("length"));
             }
         }
         Ok(FrameMatchResult::Complete)
+    }
+
+    pub fn is_last(&self) -> bool {
+        self.head == Head::FIN
     }
 }
 
@@ -431,7 +460,7 @@ mod test {
         let mut cursor = Cursor::new(&mistake_magic_buff[..]);
         assert_eq!(
             Frame::check(&mut cursor).unwrap(),
-            FrameMatchResult::MissMatch
+            FrameMatchResult::MissMatch("magic")
         );
     }
 
@@ -441,7 +470,7 @@ mod test {
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
             Frame::check(&mut cursor).unwrap(),
-            FrameMatchResult::MissMatch
+            FrameMatchResult::MissMatch("version")
         );
     }
 
@@ -451,7 +480,7 @@ mod test {
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
             Frame::check(&mut cursor).unwrap(),
-            FrameMatchResult::MissMatch
+            FrameMatchResult::MissMatch("op")
         );
     }
 
@@ -461,7 +490,7 @@ mod test {
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
             Frame::check(&mut cursor).unwrap(),
-            FrameMatchResult::Incomplete
+            FrameMatchResult::Incomplete("no_data")
         );
     }
 
@@ -471,7 +500,7 @@ mod test {
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
             Frame::check(&mut cursor).unwrap(),
-            FrameMatchResult::Incomplete
+            FrameMatchResult::MissMatch("length")
         );
     }
 
