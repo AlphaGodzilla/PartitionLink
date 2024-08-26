@@ -1,214 +1,12 @@
 use std::io::Cursor;
-use std::io::Read;
 
-use crate::protocol::Bit::ONE;
-use crate::protocol::Bit::ZERO;
-use bytes::Buf;
-use bytes::Bytes;
-use bytes::{BufMut, BytesMut};
-use log::debug;
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use log::trace;
 
-// 协议设计
-// Magic(8) + HEAD(1) + VERSION(3) + OPERATOR(4) + Length(8) + <CONTENT...>
+use super::{
+    head::Head, length::Length, op::Operator, version::Version, BitVec, Segment, MAGIC_PREFIX,
+};
 
-const MAGIC_PREFIX: u8 = 0xff;
-
-#[derive(Debug, Clone)]
-pub enum Bit {
-    ONE,
-    ZERO,
-}
-
-pub struct BitVec(Vec<Bit>);
-impl BitVec {
-    pub fn to_byte(&self) -> anyhow::Result<u8> {
-        let len = self.0.len();
-        if len < 8 {
-            // 向量长度
-            let mut self_vec_copy = Vec::with_capacity(8);
-            for _ in 0..(8 - len) {
-                self_vec_copy.push(ZERO);
-            }
-            self_vec_copy.extend_from_slice(&self.0[..]);
-            return to_byte(&self_vec_copy[..], 0);
-        }
-        let u8_slice = &self.0[(len - 8)..];
-        to_byte(u8_slice, 0)
-    }
-
-    pub fn to_u8(&self) -> anyhow::Result<u8> {
-        self.to_byte()
-    }
-}
-impl From<u8> for BitVec {
-    fn from(value: u8) -> Self {
-        BitVec(to_bit_vec(value as u32, 8))
-    }
-}
-
-pub fn to_bit_vec(value: u32, bit_size: usize) -> Vec<Bit> {
-    let mut bits = Vec::with_capacity(bit_size);
-    let mut copy = value.clone();
-    for _ in 0..bit_size {
-        if copy == 0 {
-            bits.insert(0, ZERO);
-            continue;
-        }
-        if copy & 1 != 0 {
-            bits.insert(0, ONE);
-            copy = copy >> 1;
-        } else {
-            bits.insert(0, ZERO);
-            copy = copy >> 1;
-        }
-    }
-    bits
-}
-
-pub fn to_byte(value: &[Bit], from: usize) -> anyhow::Result<u8> {
-    let end = from + 8;
-    if value.len() < end {
-        return Err(anyhow::anyhow!("value slice not enought long"));
-    }
-    let mut byte: u8 = 0;
-    for i in from..8 {
-        let bit = &value[i];
-        match bit {
-            Bit::ONE => {
-                byte = byte | 1 << (7 - i);
-            }
-            _ => {}
-        }
-    }
-    Ok(byte)
-}
-
-pub trait Segment {
-    // 比特位数
-    fn bits() -> usize;
-    // 值
-    fn value(&self) -> Vec<Bit>;
-}
-
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub enum Head {
-    UNFIN,
-    FIN,
-}
-impl Segment for Head {
-    fn bits() -> usize {
-        4
-    }
-
-    fn value(&self) -> Vec<Bit> {
-        match self {
-            Head::UNFIN => vec![Bit::ZERO, Bit::ZERO, Bit::ZERO, Bit::ZERO],
-            Head::FIN => vec![Bit::ZERO, Bit::ZERO, Bit::ZERO, Bit::ONE],
-        }
-    }
-}
-impl From<Bit> for Head {
-    fn from(value: Bit) -> Self {
-        match value {
-            ZERO => Head::UNFIN,
-            ONE => Head::FIN,
-        }
-    }
-}
-
-pub struct Padding(Bit);
-impl Segment for Padding {
-    fn bits() -> usize {
-        1
-    }
-
-    fn value(&self) -> Vec<Bit> {
-        match self.0 {
-            Bit::ZERO => vec![Bit::ZERO],
-            Bit::ONE => vec![Bit::ONE],
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Version {
-    inner: u8,
-}
-impl Version {
-    pub fn new(value: u8) -> anyhow::Result<Self> {
-        if value > 15 {
-            return Err(anyhow::anyhow!("version can not be grant than 8"));
-        }
-        Ok(Version { inner: value })
-    }
-}
-impl Segment for Version {
-    fn bits() -> usize {
-        3
-    }
-
-    fn value(&self) -> Vec<Bit> {
-        to_bit_vec(self.inner as u32, Self::bits())
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub enum Operator {
-    UNKNOWN,
-    PING,
-    PONG,
-    OP,
-}
-
-impl From<u8> for Operator {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Self::PING,
-            1 => Self::PONG,
-            2 => Self::OP,
-            _ => Self::UNKNOWN,
-        }
-    }
-}
-
-impl Segment for Operator {
-    fn bits() -> usize {
-        4
-    }
-
-    fn value(&self) -> Vec<Bit> {
-        match self {
-            Self::PING => vec![ZERO, ZERO, ZERO, ZERO],
-            Self::PONG => vec![ZERO, ZERO, ZERO, ONE],
-            Self::OP => vec![ZERO, ZERO, ONE, ZERO],
-            Self::UNKNOWN => vec![],
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Length(u8);
-
-impl Length {
-    pub fn new(value: u8) -> Self {
-        Length(value)
-    }
-
-    pub fn inner_value(&self) -> u8 {
-        self.0
-    }
-}
-
-impl Segment for Length {
-    fn bits() -> usize {
-        size_of::<u8>()
-    }
-
-    fn value(&self) -> Vec<Bit> {
-        to_bit_vec(self.0 as u32, Self::bits())
-    }
-}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FrameMatchResult<'a> {
     Incomplete(&'a str),
@@ -298,7 +96,7 @@ impl Frame {
         frame.set_op(command);
 
         let length: u8 = cursor.get_u8();
-        frame.set_length(Length(length));
+        frame.set_length(Length::new(length));
 
         let mut payload = Vec::with_capacity(length as usize);
         for _ in 0..length {
@@ -380,9 +178,13 @@ mod test {
 
     use bytes::{BufMut, BytesMut};
 
-    use crate::protocol::{BitVec, FrameMatchResult, Head, Operator, MAGIC_PREFIX};
-
-    use super::{Frame, Segment, Version};
+    use crate::protocol::{
+        frame::{Frame, FrameMatchResult},
+        head::Head,
+        op::Operator,
+        version::Version,
+        BitVec, Segment, MAGIC_PREFIX,
+    };
 
     #[test]
     fn version_test() {
