@@ -1,7 +1,3 @@
-use crate::protocol::Bit::ONE;
-use crate::protocol::Bit::ZERO;
-
-use super::Bit;
 use super::Segment;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -28,12 +24,21 @@ impl Segment for Operator {
         4
     }
 
-    fn value(&self) -> Vec<Bit> {
+    fn to_byte(&self) -> u8 {
         match self {
-            Self::PING => vec![ZERO, ZERO, ZERO, ZERO],
-            Self::PONG => vec![ZERO, ZERO, ZERO, ONE],
-            Self::OP => vec![ZERO, ZERO, ONE, ZERO],
-            Self::UNKNOWN => vec![],
+            Self::PING => 0b0,
+            Self::PONG => 0b0000_0001,
+            Self::OP => 0b0000_0010,
+            Self::UNKNOWN => 0b0000_1111,
+        }
+    }
+
+    fn from_byte(byte: u8) -> Self {
+        match byte {
+            0b0 => Self::PING,
+            0b0000_0001 => Self::PONG,
+            0b0000_0010 => Self::OP,
+            _ => Self::UNKNOWN,
         }
     }
 }

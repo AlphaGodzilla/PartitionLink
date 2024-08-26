@@ -12,7 +12,10 @@ use tokio_context::context::{Context, RefContext};
 use crate::{
     command::Command,
     config::Config,
-    protocol::{Frame, FrameMatchResult, Operator},
+    protocol::{
+        frame::{Frame, FrameMatchResult},
+        op::Operator,
+    },
 };
 
 pub struct Connection {
@@ -167,13 +170,13 @@ async fn read_cmd(conn: &mut Connection) -> anyhow::Result<Option<Command>> {
         match conn.read_frame().await? {
             Some(frame) => {
                 if op == Operator::UNKNOWN {
-                    op = frame.op.clone();
+                    op = frame.header.op.clone();
                 }
                 if frame.is_last() {
                     frames.push(frame);
                     return Ok(Some(parse_cmd(&frames)));
                 }
-                if frame.op != op {
+                if frame.header.op != op {
                     // different kind frame
                     return Err(anyhow::anyhow!("different kind frame"));
                 }

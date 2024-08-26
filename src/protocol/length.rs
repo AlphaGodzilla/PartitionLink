@@ -1,6 +1,4 @@
-use super::{to_bit_vec, Bit, Segment};
-use crate::proto::Bit::ONE;
-use crate::proto::Bit::ZERO;
+use super::Segment;
 
 #[derive(Debug)]
 pub struct Length(u8);
@@ -20,7 +18,11 @@ impl Segment for Length {
         size_of::<u8>()
     }
 
-    fn value(&self) -> Vec<Bit> {
-        to_bit_vec(self.0 as u32, Self::bits())
+    fn to_byte(&self) -> u8 {
+        self.0
+    }
+
+    fn from_byte(byte: u8) -> Self {
+        Self::new(byte)
     }
 }

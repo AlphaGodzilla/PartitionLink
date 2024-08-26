@@ -4,7 +4,8 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use log::trace;
 
 use super::{
-    head::Head, length::Length, op::Operator, version::Version, BitVec, Segment, MAGIC_PREFIX,
+    head::Head, header::Header, length::Length, op::Operator, version::Version, Segment,
+    CURRENT_VERSION, MAGIC_PREFIX,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -16,9 +17,7 @@ pub enum FrameMatchResult<'a> {
 
 #[derive(Debug)]
 pub struct Frame {
-    pub head: Head,
-    pub version: Version,
-    pub op: Operator,
+    pub header: Header,
     pub length: Length,
     pub payload: Vec<u8>,
     encode_raw: Option<Bytes>,
@@ -26,27 +25,29 @@ pub struct Frame {
 impl Frame {
     pub fn new() -> Self {
         Frame {
-            head: Head::FIN,
-            version: Version::new(1).expect("version constract error"),
-            op: Operator::OP,
+            header: Header {
+                head: Head::FIN,
+                version: Version::new(CURRENT_VERSION).expect("version constract error"),
+                op: Operator::OP,
+            },
             length: Length::new(0),
             payload: Vec::new(),
             encode_raw: None,
         }
     }
 
-    pub fn set_head(&mut self, head: Head) -> &mut Frame {
-        self.head = head;
+    pub fn set_header(&mut self, header: Header) -> &mut Frame {
+        self.header = header;
         self
     }
 
-    // pub fn set_version(&mut self, version: Version) -> &Frame {
-    //     self.version = version;
-    //     self
-    // }
+    pub fn set_head(&mut self, head: Head) -> &mut Frame {
+        self.header.head = head;
+        self
+    }
 
     pub fn set_op(&mut self, cmd: Operator) -> &mut Frame {
-        self.op = cmd;
+        self.header.op = cmd;
         self
     }
 
@@ -66,13 +67,8 @@ impl Frame {
         }
         let mut buff = BytesMut::new();
         buff.put_u8(MAGIC_PREFIX);
-        let mut header = Vec::with_capacity(8);
-        header.extend_from_slice(&self.head.value()[..]);
-        header.extend_from_slice(&self.version.value()[..]);
-        header.extend_from_slice(&self.op.value()[..]);
-        let header = BitVec(header).to_byte().unwrap();
-        buff.put_u8(header);
-        buff.put_u8(self.length.inner_value());
+        buff.put_u8(self.header.to_byte());
+        buff.put_u8(self.length.to_byte());
         self.payload.iter().for_each(|b| buff.put_u8(*b));
         self.encode_raw = Some(buff.freeze());
         self.encode_raw.as_ref().unwrap()
@@ -81,22 +77,14 @@ impl Frame {
     pub fn parse(cursor: &mut Cursor<&[u8]>) -> anyhow::Result<Frame> {
         let mut frame = Frame::new();
         // skip magic
-        cursor.get_u8();
+        let _ = cursor.get_u8();
 
         let header = cursor.get_u8();
-        let header: BitVec = header.into();
-        let header = header.0;
-        let head = header.get(0).unwrap();
-        frame.set_head(head.clone().into());
-
-        let command_vec = &header[4..];
-        let mut command = Vec::with_capacity(Operator::bits());
-        command.extend_from_slice(command_vec);
-        let command: Operator = BitVec(command).to_byte()?.into();
-        frame.set_op(command);
+        let header: Header = Header::from_byte(header);
+        frame.set_header(header);
 
         let length: u8 = cursor.get_u8();
-        frame.set_length(Length::new(length));
+        frame.set_length(Length::from_byte(length));
 
         let mut payload = Vec::with_capacity(length as usize);
         for _ in 0..length {
@@ -126,24 +114,15 @@ impl Frame {
             return Ok(FrameMatchResult::Incomplete("header"));
         }
         let header = cursor.get_u8();
-        let header: BitVec = header.into();
-        let header = header.0;
+        let header = Header::from_byte(header);
 
-        // chcke version
-        let version_vec = &header[1..4];
-        let mut version = Vec::with_capacity(Head::bits());
-        version.extend_from_slice(version_vec);
-        let version: u8 = BitVec(version).to_byte()?;
-        if version != 1 {
+        // check version
+        if header.version.to_byte() != CURRENT_VERSION {
             return Ok(FrameMatchResult::MissMatch("version"));
         }
 
-        // checke command
-        let command_vec = &header[4..];
-        let mut command = Vec::with_capacity(Operator::bits());
-        command.extend_from_slice(command_vec);
-        let command: Operator = BitVec(command).to_byte()?.into();
-        if command == Operator::UNKNOWN {
+        // checke op
+        if header.op == Operator::UNKNOWN {
             return Ok(FrameMatchResult::MissMatch("op"));
         }
 
@@ -168,7 +147,7 @@ impl Frame {
     }
 
     pub fn is_last(&self) -> bool {
-        self.head == Head::FIN
+        self.header.head == Head::FIN
     }
 }
 
@@ -181,15 +160,16 @@ mod test {
     use crate::protocol::{
         frame::{Frame, FrameMatchResult},
         head::Head,
+        header::Header,
         op::Operator,
         version::Version,
-        BitVec, Segment, MAGIC_PREFIX,
+        Segment, CURRENT_VERSION, MAGIC_PREFIX,
     };
 
     #[test]
     fn version_test() {
         let version = Version::new(5).unwrap();
-        println!("{:?}", version.value());
+        println!("{:?}", version.to_byte());
     }
 
     #[test]
@@ -223,28 +203,25 @@ mod test {
         }
 
         // head
-        let head = Head::FIN.value();
+        let head = Head::FIN;
         // version
         let version;
         if mistake_version {
-            version = Version::new(2).unwrap().value();
+            version = Version::new(CURRENT_VERSION + 1).unwrap();
         } else {
-            version = Version::new(1).unwrap().value();
+            version = Version::new(CURRENT_VERSION).unwrap();
         }
         // op
         let op;
         if mistake_op {
-            op = Operator::UNKNOWN.value();
+            op = Operator::UNKNOWN;
         } else {
-            op = Operator::OP.value();
+            op = Operator::OP;
         }
 
-        let mut header = Vec::new();
-        header.extend_from_slice(&head[..]);
-        header.extend_from_slice(&version[..]);
-        header.extend_from_slice(&op[..]);
-        let header = BitVec(header).to_byte().unwrap();
-        buff.put_u8(header);
+        let header = Header { head, version, op };
+        println!("header is {:?}, bytes={:?}", &header, header.to_byte());
+        buff.put_u8(header.to_byte());
         // length
         if mistake_payload_length {
             buff.put_u8(10);
@@ -279,6 +256,7 @@ mod test {
     #[test]
     fn mismatch_frame_check_for_op_test() {
         let buff = build_complete_bytes_buff(false, false, true, false);
+        println!("mismatch_frame_check_for_op_test#buff={:?}", &buff[..]);
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
             Frame::check(&mut cursor).unwrap(),

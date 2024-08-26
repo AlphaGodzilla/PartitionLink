@@ -1,6 +1,4 @@
-use super::{Bit, Segment};
-use crate::proto::Bit::ONE;
-use crate::proto::Bit::ZERO;
+use super::Segment;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Head {
@@ -9,21 +7,21 @@ pub enum Head {
 }
 impl Segment for Head {
     fn bits() -> usize {
-        4
+        1
     }
 
-    fn value(&self) -> Vec<Bit> {
+    fn to_byte(&self) -> u8 {
         match self {
-            Head::UNFIN => vec![Bit::ZERO, Bit::ZERO, Bit::ZERO, Bit::ZERO],
-            Head::FIN => vec![Bit::ZERO, Bit::ZERO, Bit::ZERO, Bit::ONE],
+            Head::UNFIN => 0b0,
+            Head::FIN => 0b0000_0001,
         }
     }
-}
-impl From<Bit> for Head {
-    fn from(value: Bit) -> Self {
-        match value {
-            ZERO => Head::UNFIN,
-            ONE => Head::FIN,
+
+    fn from_byte(byte: u8) -> Self {
+        match byte {
+            0b0 => Self::UNFIN,
+            0b0000_0001 => Self::FIN,
+            _ => Self::FIN,
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use log::debug;
-use protocol::Length;
+use protocol::{frame::Frame, head::Head, length::Length, op::Operator};
 use tokio::{
     io::AsyncWriteExt,
     net::TcpSocket,
@@ -16,12 +16,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let socket = TcpSocket::new_v4()?;
     let mut stream = socket.connect(addr).await?;
     // let mut timeout_interval = interval(Duration::from_secs(1));
-    let mut frame = protocol::Frame::new();
+    let mut frame = Frame::new();
     let payload = String::from("hello");
     let payload = payload.into_bytes();
     frame
-        .set_head(protocol::Head::FIN)
-        .set_op(protocol::Operator::OP)
+        .set_head(Head::FIN)
+        .set_op(Operator::OP)
         .set_length(Length::new(payload.len() as u8))
         .set_payload(payload);
     debug!("frame: {:?}", &frame);

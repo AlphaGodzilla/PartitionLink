@@ -1,5 +1,3 @@
-use super::to_bit_vec;
-use super::Bit;
 use super::Segment;
 
 #[derive(Debug)]
@@ -8,7 +6,7 @@ pub struct Version {
 }
 impl Version {
     pub fn new(value: u8) -> anyhow::Result<Self> {
-        if value > 15 {
+        if value > 8 {
             return Err(anyhow::anyhow!("version can not be grant than 8"));
         }
         Ok(Version { inner: value })
@@ -19,7 +17,11 @@ impl Segment for Version {
         3
     }
 
-    fn value(&self) -> Vec<Bit> {
-        to_bit_vec(self.inner as u32, Self::bits())
+    fn to_byte(&self) -> u8 {
+        self.inner
+    }
+
+    fn from_byte(byte: u8) -> Self {
+        Self::new(byte).unwrap()
     }
 }
