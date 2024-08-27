@@ -4,7 +4,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::until::{self, now_ts};
+use crate::until::{now_ts};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeMsg {

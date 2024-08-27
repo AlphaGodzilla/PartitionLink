@@ -1,4 +1,4 @@
-use log::{debug, trace};
+use log::trace;
 
 use super::{head::Head, op::Operator, version::Version, Segment};
 

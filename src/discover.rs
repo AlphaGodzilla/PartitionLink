@@ -4,11 +4,10 @@ use std::{
 };
 
 use log::{debug, error, info, trace};
-use serde_json::json;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::{
     net::UdpSocket,
-    time::{interval, sleep},
+    time::interval,
 };
 use tokio_context::context::{Context, RefContext};
 use uuid::Uuid;

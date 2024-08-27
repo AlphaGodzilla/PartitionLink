@@ -266,7 +266,7 @@ mod test {
 
     #[test]
     fn incomplete_frame_check_for_empty_buffer_test() {
-        let mut buff = bytes::BytesMut::new();
+        let buff = bytes::BytesMut::new();
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
             Frame::check(&mut cursor).unwrap(),
