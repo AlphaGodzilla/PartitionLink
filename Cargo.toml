@@ -3,6 +3,11 @@ name = "PartitionLink"
 version = "0.1.0"
 edition = "2021"
 
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
 [[bin]]
 name = "server"
 path = "src/server.rs"
@@ -17,6 +22,7 @@ anyhow = { version = "1.0.86", features = ["std", "backtrace"] }
 async-trait = "0.1.81"
 bytes = { version = "1.7.1", features = ["std", "serde"] }
 env_logger = "0.11.5"
+jni = "0.21.1"
 log = "0.4.22"
 serde = { version = "1.0.208", features = ["std", "derive", "serde_derive"] }
 serde_json = "1.0.125"

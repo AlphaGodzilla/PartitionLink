@@ -16,8 +16,16 @@ mod protocol;
 mod runtime;
 mod until;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
+    // 启动在当前主线程
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async { main0().await.unwrap() });
+}
+
+pub async fn main0() -> anyhow::Result<()> {
     env_logger::init();
 
     let cfg = Arc::new(Config::default());
@@ -34,7 +42,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     discover_handler.await?;
     command_handler.await?;
-
     Ok(())
 }
 
