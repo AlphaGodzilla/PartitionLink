@@ -5,10 +5,7 @@ use std::{
 
 use log::{debug, error, info, trace};
 use socket2::{Domain, Protocol, Socket, Type};
-use tokio::{
-    net::UdpSocket,
-    time::interval,
-};
+use tokio::{net::UdpSocket, time::interval};
 use tokio_context::context::{Context, RefContext};
 use uuid::Uuid;
 
