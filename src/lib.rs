@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use db::Database;
 use jni::objects::{JClass, JString};
+use jni::sys::jlong;
 use jni::JNIEnv;
 
 use config::Config;
@@ -79,4 +81,18 @@ pub async fn main0() -> anyhow::Result<()> {
     discover_handler.await?;
     command_handler.await?;
     Ok(())
+}
+
+#[no_mangle]
+pub extern "C" fn Java_SimpleInMemDB_makeDB(mut env: JNIEnv, _class: JClass) -> jlong {
+    Box::into_raw(Box::new(Database::default())) as jlong
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn Java_SimpleInMemDB_disposeDB(
+    mut env: JNIEnv,
+    _class: JClass,
+    db: *mut Database,
+) {
+    drop(Box::from_raw(db))
 }

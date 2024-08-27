@@ -1,14 +1,14 @@
 use ahash::AHashMap;
 
-pub enum DbValue {
+pub enum DBValue {
     String(String),
     Bytes(Vec<u8>),
-    List(Vec<DbValue>),
-    Hash(AHashMap<String, DbValue>),
+    List(Vec<DBValue>),
+    Hash(AHashMap<String, DBValue>),
 }
 
 pub struct Database {
-    db: AHashMap<String, DbValue>,
+    db: AHashMap<String, DBValue>,
 }
 
 impl Default for Database {
@@ -24,7 +24,11 @@ impl Database {
         }
     }
 
-    fn str_set(&mut self, key: String, value: DbValue) {
+    fn str_set(&mut self, key: String, value: DBValue) {
         self.db.insert(key, value);
+    }
+
+    fn str_get(&mut self, key: &str) -> Option<&DBValue> {
+        self.db.get(key)
     }
 }
