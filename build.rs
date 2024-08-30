@@ -15,10 +15,10 @@ fn main() {
         &proto_files
     );
     let mut config = prost_build::Config::new();
-    config.type_attribute(
-        ".",
-        "#[derive(Debug, serde::Serialize, serde::Deserialize)]",
-    );
+    // config.type_attribute(
+    //     ".",
+    //     "#[derive(Debug, serde::Serialize, serde::Deserialize)]",
+    // );
     config
         .compile_protos(&proto_files[..], &[proto_dir])
         .unwrap();
