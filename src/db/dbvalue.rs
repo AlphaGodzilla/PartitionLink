@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::command::proto;
 use crate::command::proto::out::db_value;
 use crate::command::proto::out::{BytesDbValue, HashDbValue, ListDbValue, StringDbValue};
-use ahash::{AHashMap, HashMap};
+use ahash::AHashMap;
 
 #[derive(Clone)]
 pub enum DBValue {
