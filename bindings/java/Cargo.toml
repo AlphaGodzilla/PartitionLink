@@ -1,0 +1,16 @@
+[package]
+name = "partition_link_java"
+publish = false
+
+version = "0.1.0"
+edition = "2021"
+
+
+[lib]
+crate-type = ["cdylib"]
+doc = false
+
+[dependencies]
+jni = "0.21.1"
+PartitionLink = {version = ">=0", path = "../../"}
+tokio = { version = "1.39.3", features = ["full"] }

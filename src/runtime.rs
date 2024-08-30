@@ -8,6 +8,8 @@ use tokio::time::interval;
 use tokio_context::context::{Context, RefContext};
 
 use crate::cmd_server::start_cmd_server;
+use crate::command::Command;
+use crate::db::{start_database_channel, Database};
 use crate::node::{Node, NodeTable};
 use crate::{config::Config, discover::Discover};
 
@@ -23,7 +25,9 @@ impl Runtime {
         &self,
         ctx: &RefContext,
         cfg: Arc<Config>,
-    ) -> anyhow::Result<(JoinHandle<()>, JoinHandle<()>)> {
+        db: Database,
+        db_recv: mpsc::Receiver<Command>,
+    ) -> anyhow::Result<(JoinHandle<()>, JoinHandle<()>, JoinHandle<()>)> {
         let mut node_table = NodeTable::new(cfg.clone());
         // 启动discover
         let discover_ctx = ctx.clone();
@@ -52,6 +56,7 @@ impl Runtime {
                 }
             }
         });
+
         // 启动cmd server
         let ctx_copy = ctx.clone();
         let cfg_copy = cfg.clone();
@@ -61,8 +66,20 @@ impl Runtime {
                 error!("Start command server thread error {:?}", err);
             }
         });
-        // info!("Startup successful");
-        Ok((discover_handler, cmd_server_handler))
+
+        // 启动database_channel
+        let ctx_copy = ctx.clone();
+        let database_channel_handler = tokio::spawn(async move {
+            info!("Database channel thread startup");
+            if let Err(err) = start_database_channel(ctx_copy, db, db_recv).await {
+                error!("Start database channel thread error {:?}", err);
+            }
+        });
+        Ok((
+            discover_handler,
+            cmd_server_handler,
+            database_channel_handler,
+        ))
     }
 }
 

@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package command.cmd;
+
+import "dbvalue.proto";
+
+message HashMapPutCmd {
+    string key = 1;
+    string member_key = 2;
+    command.cmd.DBValue member_value = 3;
+}

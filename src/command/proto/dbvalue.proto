@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package command.cmd;
+
+message StringDBValue {
+    string value = 1;
+}
+
+message BytesDBValue {
+    bytes value = 1;
+}
+
+message ListDBValue {
+     repeated DBValue values = 1;
+}
+
+message HashDBValue {
+    map<string, DBValue> values = 1;
+}
+
+message DBValue {
+    oneof value {
+        StringDBValue string_db_value = 1;
+        BytesDBValue bytes_db_value = 2;
+        ListDBValue list_db_value = 3;
+        HashDBValue hash_db_value = 4;
+    }
+}

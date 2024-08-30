@@ -203,6 +203,7 @@ fn parse_cmd(frames: &[Frame]) -> Command {
         capacity,
         &payload
     );
+    let payload = &(String::from_utf8_lossy(&payload).to_string())[..];
     payload.into()
 }
 
