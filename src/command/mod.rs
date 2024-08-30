@@ -1,12 +1,13 @@
-use std::fmt::Debug;
+use std::fmt::Display;
 
 use hello::HelloCmd;
 use invalid::InvalidCommand;
 use tokio::sync::mpsc;
 
-use crate::db::{DBValue, Database};
+use crate::db::{dbvalue::DBValue, Database};
 
-pub mod hashmap;
+pub mod hash_get;
+pub mod hash_put;
 pub mod hello;
 pub mod invalid;
 pub mod proto;
@@ -17,15 +18,17 @@ pub enum CommandType {
 }
 
 // 所有命令必须实现该trait
-pub trait ExecutableCommand: Debug + Send + Sync {
+pub trait ExecutableCommand: Display + Send + Sync {
     // 命令类型，分为读类型和写类型
     fn cmd_type(&self) -> CommandType;
 
     // 执行命令
     fn execute(&self, db: &mut Database) -> anyhow::Result<Option<DBValue>>;
+
+    // 编码为字节数组
+    fn encode(&self) -> anyhow::Result<bytes::Bytes>;
 }
 
-#[derive(Debug)]
 pub struct Command {
     // 命令
     inner: Box<dyn ExecutableCommand>,
@@ -54,6 +57,12 @@ impl Command {
             _ => {}
         }
         Ok(())
+    }
+}
+
+impl Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
     }
 }
 

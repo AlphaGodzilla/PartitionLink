@@ -143,7 +143,7 @@ async fn connection(ctx: RefContext, cfg: Arc<Config>, stream: TcpStream) {
                     Ok(cmd_opt) => {
                         match cmd_opt {
                             Some(cmd) => {
-                                debug!("Recv Command: {:?}", cmd);
+                                debug!("Recv Command: {}", cmd);
                                 // TODO: execute Command
                             }
                             None => {

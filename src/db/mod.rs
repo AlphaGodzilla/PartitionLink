@@ -1,35 +1,16 @@
 use std::{collections::HashMap, fmt::Display};
 
+use dbvalue::DBValue;
 use log::{error, info};
-use serde::{Deserialize, Serialize};
 use tokio::{select, sync::mpsc};
 use tokio_context::context::{Context, RefContext};
 
 use crate::command::Command;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DBValue {
-    String(String),
-    Bytes(Vec<u8>),
-    List(Vec<DBValue>),
-    Hash(HashMap<String, DBValue>),
-}
+pub mod dbvalue;
 
 pub struct Database {
     pub db: HashMap<String, DBValue>,
     pub tx: mpsc::Sender<Command>,
-}
-
-impl Display for DBValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let type_name = match self {
-            Self::String(s) => "String",
-            Self::Bytes(b) => "Bytes",
-            Self::List(l) => "List",
-            Self::Hash(h) => "Hash",
-        };
-        write!(f, "DBValue::{}", type_name)
-    }
 }
 
 impl Database {

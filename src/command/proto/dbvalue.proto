@@ -20,9 +20,10 @@ message HashDBValue {
 
 message DBValue {
     oneof value {
-        StringDBValue string_db_value = 1;
-        BytesDBValue bytes_db_value = 2;
-        ListDBValue list_db_value = 3;
-        HashDBValue hash_db_value = 4;
+        bool none_db_value = 1;
+        StringDBValue string_db_value = 2;
+        BytesDBValue bytes_db_value = 3;
+        ListDBValue list_db_value = 4;
+        HashDBValue hash_db_value = 5;
     }
 }

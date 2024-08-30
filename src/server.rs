@@ -8,9 +8,9 @@ use std::{
 };
 
 use crate::command::Command;
-use command::hashmap::{HashMapGetCmd, HashMapPutCmd};
+use command::{hash_get::HashMapGetCmd, hash_put::HashMapPutCmd};
 use config::Config;
-use db::{DBValue, Database};
+use db::{dbvalue::DBValue, Database};
 use log::{debug, error, info};
 use runtime::Runtime;
 use tokio::{select, signal, sync::mpsc};
@@ -65,7 +65,18 @@ fn main() {
                 error!("Send command error {:?}", err);
             }
             if let Some(res) = dbvalue_rx.recv().await {
-                debug!("Execute command HashMapPutCmd, got result => {:?}", &res);
+                match res {
+                    Ok(res) => {
+                        if let Some(v) = res {
+                            debug!("Execute command HashMapPutCmd, got result => {}", &v);
+                        } else {
+                            debug!("Execute command HashMapPutCmd, got result => None");
+                        }
+                    }
+                    Err(err) => {
+                        debug!("Execute command HashMapPutCmd, got result => {:?}", &err);
+                    }
+                }
             }
             let cmd = Box::new(HashMapGetCmd {
                 key: String::from("UserConnectStateMap"),
@@ -75,7 +86,18 @@ fn main() {
                 error!("Send command error {:?}", err);
             }
             if let Some(res) = dbvalue_rx.recv().await {
-                debug!("Execute command HashMapGetCmd, got result => {:?}", &res);
+                match res {
+                    Ok(res) => {
+                        if let Some(v) = res {
+                            debug!("Execute command HashMapGetCmd, got result => {}", &v);
+                        } else {
+                            debug!("Execute command HashMapGetCmd, got result => None");
+                        }
+                    }
+                    Err(err) => {
+                        debug!("Execute command HashMapGetCmd, got result => {:?}", &err);
+                    }
+                }
             }
         });
     }

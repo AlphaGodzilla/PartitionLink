@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package command.cmd;
+
+message HelloCmd {
+    bool valid = 1;
+}

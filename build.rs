@@ -2,8 +2,6 @@ extern crate prost_build;
 
 use std::{fs, path::Path};
 
-// use prost_build::{Config, FileDescriptorSet};
-
 fn main() {
     let proto_dir = "src/command/proto/";
     let mut proto_files: Vec<String> = Vec::new();
@@ -15,10 +13,6 @@ fn main() {
         &proto_files
     );
     let mut config = prost_build::Config::new();
-    // config.type_attribute(
-    //     ".",
-    //     "#[derive(Debug, serde::Serialize, serde::Deserialize)]",
-    // );
     config
         .compile_protos(&proto_files[..], &[proto_dir])
         .unwrap();

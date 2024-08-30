@@ -1,13 +1,15 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
-use anyhow::anyhow;
+use ahash::AHashMap;
+use prost::Message;
 use serde::{Deserialize, Serialize};
 
-use crate::db::DBValue;
+use crate::db::dbvalue::DBValue;
 
 use super::ExecutableCommand;
+use anyhow::anyhow;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct HashMapPutCmd {
     pub key: String,
     pub member_key: String,
@@ -34,35 +36,39 @@ impl ExecutableCommand for HashMapPutCmd {
                 }
             },
             None => {
-                let mut hashmap = HashMap::new();
+                let mut hashmap = AHashMap::new();
                 hashmap.insert(self.member_key.clone(), self.member_value.clone());
                 db.set(self.key.clone(), DBValue::Hash(hashmap));
                 return Ok(None);
             }
         }
     }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HashMapGetCmd {
-    pub key: String,
-    pub member_key: String,
-}
-
-impl ExecutableCommand for HashMapGetCmd {
-    fn cmd_type(&self) -> super::CommandType {
-        super::CommandType::READ
+    fn encode(&self) -> anyhow::Result<bytes::Bytes> {
+        let mut buff = bytes::BytesMut::new();
+        let msg = super::proto::out::HashMapPutCmd {
+            key: self.key.clone(),
+            member_key: self.member_key.clone(),
+            member_value: Some(super::proto::out::DbValue {
+                value: Some(self.member_value.to_protobuf().into()),
+            }),
+        };
+        msg.encode(&mut buff)?;
+        Ok(buff.freeze())
     }
+}
+impl Display for HashMapPutCmd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HashPut")
+    }
+}
 
-    fn execute(&self, db: &mut crate::db::Database) -> anyhow::Result<Option<DBValue>> {
-        if let Some(value) = db.get(&self.key) {
-            match value {
-                DBValue::Hash(hash) => {
-                    return Ok(hash.get(&self.member_key).map(|x| x.clone()));
-                }
-                _ => return Ok(None),
-            }
+impl From<super::proto::out::HashMapPutCmd> for HashMapPutCmd {
+    fn from(value: super::proto::out::HashMapPutCmd) -> Self {
+        HashMapPutCmd {
+            key: value.key,
+            member_key: value.member_key,
+            member_value: value.member_value.map_or(DBValue::None, |x| x.into()),
         }
-        return Ok(None);
     }
 }

@@ -9,3 +9,8 @@ message HashMapPutCmd {
     string member_key = 2;
     command.cmd.DBValue member_value = 3;
 }
+
+message HashMapGetCmd {
+    string key = 1;
+    string member_key = 2;
+}
