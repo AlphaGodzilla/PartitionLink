@@ -16,14 +16,32 @@ pub enum DBValue {
 
 impl Display for DBValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let type_name = match self {
-            Self::None => "None",
-            Self::String(_) => "String",
-            Self::Bytes(_) => "Bytes",
-            Self::List(_) => "List",
-            Self::Hash(_) => "Hash",
+        match self {
+            Self::None => {
+                write!(f, "DBValue::None")?;
+            }
+            Self::String(v) => {
+                write!(f, "DBValue::{}", &format!("String({})", &v))?;
+            }
+            Self::Bytes(v) => {
+                write!(f, "DBValue::{}", &format!("Bytes({} bytes)", v.len()))?;
+            }
+            Self::List(v) => {
+                write!(f, "DBValue::List(",)?;
+                let mut iter = v.iter();
+                if let Some(first) = iter.next() {
+                    write!(f, "{}", first)?;
+                    for item in iter {
+                        write!(f, ",{}", item)?;
+                    }
+                }
+                write!(f, ")")?;
+            }
+            Self::Hash(_) => {
+                write!(f, "DBValue::{}", "Hash")?;
+            }
         };
-        write!(f, "DBValue::{}", type_name)
+        Ok(())
     }
 }
 

@@ -89,7 +89,7 @@ async fn on_ping_node(
 ) -> anyhow::Result<()> {
     if let Some(recv) = rev {
         if let Some(msg) = recv.recv().await {
-            trace!("Rev other node ping {:?}", &msg);
+            trace!("Recv node ping {:?}", &msg);
             node_table.ping(msg)?;
         }
     }

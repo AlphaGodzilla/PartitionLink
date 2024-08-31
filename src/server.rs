@@ -38,16 +38,38 @@ fn main() {
     let (tx, rx) = mpsc::channel(32);
     let db = Database::new(tx.clone());
 
+    let send_cmd = option_env!("SEND_CMD");
+    if send_cmd.is_some() {
+        info!("SEND_CMD set, running cmd&server mode");
+        interval_execute_cmd(&runtime, db, tx.clone(), rx);
+    } else {
+        info!("SEND_CMD unset, running only server mode");
+        // 阻塞当前线程
+        runtime.block_on(async move { start_runtime(db, rx).await.unwrap() });
+    }
+}
+
+pub fn interval_execute_cmd(
+    runtime: &tokio::runtime::Runtime,
+    db: Database,
+    database_send: mpsc::Sender<Command>,
+    database_recv: mpsc::Receiver<Command>,
+) {
     // start server
-    runtime.spawn(async move { start_runtime(db, rx).await.unwrap() });
+    let server_handler =
+        runtime.spawn(async move { start_runtime(db, database_recv).await.unwrap() });
 
     // try execute cmd
     let adder = Arc::new(AtomicUsize::new(0));
     for _ in 0..10 {
         thread::sleep(Duration::from_secs(1));
 
+        if server_handler.is_finished() {
+            break;
+        }
+
         // execute cmd
-        let tx = tx.clone();
+        let tx = database_send.clone();
 
         let adder_copy = adder.clone();
         runtime.spawn(async move {

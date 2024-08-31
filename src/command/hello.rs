@@ -30,7 +30,7 @@ impl ExecutableCommand for HelloCmd {
 
 impl Display for HelloCmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Hellow:{}", self.valid)
+        write!(f, "Hello:{}", self.valid)
     }
 }
 

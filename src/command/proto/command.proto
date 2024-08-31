@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package command;
+
+import "google/protobuf/timestamp.proto";
+
+enum Cmd {
+    UNKNOWN = 0;
+    HELLO_CMD = 1;
+    HASH_MAP_PUT_CMD = 2;
+    HASH_MAP_GET_CMD = 3;
+}
+
+message Command {
+    Cmd cmd = 1;
+    google.protobuf.Timestamp ts = 2;
+    bytes value = 3;
+}
