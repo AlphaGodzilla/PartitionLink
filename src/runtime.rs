@@ -57,7 +57,7 @@ impl Runtime {
             }
         });
 
-        // 启动cmd server
+        // 启动cmd server用于监听其它进程发送过来的命令
         let ctx_copy = ctx.clone();
         let cfg_copy = cfg.clone();
         let cmd_server_handler = tokio::spawn(async move {

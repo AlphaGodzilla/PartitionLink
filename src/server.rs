@@ -13,7 +13,7 @@ use config::Config;
 use db::{dbvalue::DBValue, Database};
 use log::{debug, error, info};
 use runtime::Runtime;
-use tokio::{select, signal, sync::mpsc};
+use tokio::{select, signal, sync::mpsc, task::JoinHandle};
 use tokio_context::context::RefContext;
 
 mod cmd_server;
@@ -38,12 +38,12 @@ fn main() {
     let (tx, rx) = mpsc::channel(32);
     let db = Database::new(tx.clone());
 
-    let send_cmd = option_env!("SEND_CMD");
+    let send_cmd = option_env!("SEND_CMD_MODE");
     if send_cmd.is_some() {
-        info!("SEND_CMD set, running cmd&server mode");
+        info!("SEND_CMD_MODE set, running server and execute command mode");
         interval_execute_cmd(&runtime, db, tx.clone(), rx);
     } else {
-        info!("SEND_CMD unset, running only server mode");
+        info!("SEND_CMD_MODE unset, running only server mode");
         // 阻塞当前线程
         runtime.block_on(async move { start_runtime(db, rx).await.unwrap() });
     }
@@ -60,9 +60,17 @@ pub fn interval_execute_cmd(
         runtime.spawn(async move { start_runtime(db, database_recv).await.unwrap() });
 
     // try execute cmd
+    execute_cmd(runtime, database_send, &server_handler);
+}
+
+pub fn execute_cmd(
+    runtime: &tokio::runtime::Runtime,
+    database_send: mpsc::Sender<Command>,
+    server_handler: &JoinHandle<()>,
+) {
     let adder = Arc::new(AtomicUsize::new(0));
     for _ in 0..10 {
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_secs(10));
 
         if server_handler.is_finished() {
             break;
