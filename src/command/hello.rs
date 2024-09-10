@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use prost::Message;
 
-use crate::db::{dbvalue::DBValue, Database};
+use crate::db::{database::Database, dbvalue::DBValue};
 
 use super::{CommandType, ExecutableCommand};
 
@@ -26,6 +26,10 @@ impl ExecutableCommand for HelloCmd {
         msg.encode(&mut buff)?;
         Ok(buff.freeze())
     }
+
+    fn cmd_id(&self) -> i32 {
+        crate::command::proto::out::Cmd::HelloCmd as i32
+    }
 }
 
 impl Display for HelloCmd {
@@ -37,5 +41,14 @@ impl Display for HelloCmd {
 impl From<super::proto::out::HelloCmd> for HelloCmd {
     fn from(value: super::proto::out::HelloCmd) -> Self {
         HelloCmd { valid: value.valid }
+    }
+}
+
+impl TryFrom<super::proto::out::Command> for HelloCmd {
+    type Error = anyhow::Error;
+
+    fn try_from(value: super::proto::out::Command) -> Result<Self, Self::Error> {
+        let hello_cmd = super::proto::out::HelloCmd::decode(&value.value[..])?;
+        Ok(hello_cmd.into())
     }
 }

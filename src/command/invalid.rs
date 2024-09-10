@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::db::{dbvalue::DBValue, Database};
+use crate::db::{database::Database, dbvalue::DBValue};
 
 use super::{CommandType, ExecutableCommand};
 
@@ -18,6 +18,10 @@ impl ExecutableCommand for InvalidCommand {
 
     fn encode(&self) -> anyhow::Result<bytes::Bytes> {
         Err(anyhow::anyhow!("InvalidCommand cannot encode"))
+    }
+
+    fn cmd_id(&self) -> i32 {
+        crate::command::proto::out::Cmd::Unknown as i32
     }
 }
 

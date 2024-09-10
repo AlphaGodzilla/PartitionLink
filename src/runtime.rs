@@ -9,8 +9,9 @@ use tokio_context::context::{Context, RefContext};
 
 use crate::cmd_server::start_cmd_server;
 use crate::command::Command;
-use crate::db::{start_database_channel, Database};
-use crate::node::{Node, NodeTable};
+use crate::connection::manager::ConnectionManager;
+use crate::db::database::{start_database_channel, Database};
+use crate::node::{Node, NodeManager, NodeTable, ShareNodeTable};
 use crate::{config::Config, discover::Discover};
 
 // 运行时作用：负责节点发现和数据同步
@@ -28,12 +29,18 @@ impl Runtime {
         db: Database,
         db_recv: mpsc::Receiver<Command>,
     ) -> anyhow::Result<(JoinHandle<()>, JoinHandle<()>, JoinHandle<()>)> {
-        let mut node_table = NodeTable::new(cfg.clone());
+        // init node table
+        let node_table = NodeTable::new(cfg.clone());
+        let node_manager = ShareNodeTable::new(node_table);
+        // init connection manager
+        let conn_manager = ConnectionManager::new(node_manager.clone());
+
         // 启动discover
         let discover_ctx = ctx.clone();
         let mut discover_rev = start_discover(&discover_ctx, cfg.clone())?;
         let cfg_copy = cfg.clone();
         let ctx_copy = ctx.clone();
+        let mut node_manager_copy = node_manager.clone();
         let discover_handler = tokio::spawn(async move {
             info!("Discover thread startup");
             let (mut ctx, _handler) = Context::with_parent(&ctx_copy, None);
@@ -45,9 +52,9 @@ impl Runtime {
                         debug!("Discover thread shutdown");
                         break;
                     },
-                    _ = on_ping_node(&mut discover_rev, &mut node_table) => {},
+                    _ = on_ping_node(&mut discover_rev, &mut node_manager_copy) => {},
                     _ = timeout_interval.tick() => {
-                        if let Ok(prune_cnt) = node_table.prune() {
+                        if let Ok(prune_cnt) = node_manager_copy.prune().await {
                             if prune_cnt > 0 {
                                 info!("Prune complete, remove node count {}", prune_cnt);
                             }
@@ -69,9 +76,11 @@ impl Runtime {
 
         // 启动database_channel
         let ctx_copy = ctx.clone();
+        let conn_manager_copy = conn_manager.clone();
         let database_channel_handler = tokio::spawn(async move {
             info!("Database channel thread startup");
-            if let Err(err) = start_database_channel(ctx_copy, db, db_recv).await {
+            if let Err(err) = start_database_channel(ctx_copy, db, db_recv, conn_manager_copy).await
+            {
                 error!("Start database channel thread error {:?}", err);
             }
         });
@@ -85,12 +94,12 @@ impl Runtime {
 
 async fn on_ping_node(
     rev: &mut Option<mpsc::Receiver<Node>>,
-    node_table: &mut NodeTable,
+    node_manager: &mut ShareNodeTable,
 ) -> anyhow::Result<()> {
     if let Some(recv) = rev {
         if let Some(msg) = recv.recv().await {
             trace!("Recv node ping {:?}", &msg);
-            node_table.ping(msg)?;
+            node_manager.ping(msg).await?;
         }
     }
     Ok(())

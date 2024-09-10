@@ -10,15 +10,17 @@ use std::{
 use crate::command::Command;
 use command::{hash_get::HashMapGetCmd, hash_put::HashMapPutCmd};
 use config::Config;
-use db::{dbvalue::DBValue, Database};
+use db::{database::Database, dbvalue::DBValue};
 use log::{debug, error, info};
 use runtime::Runtime;
 use tokio::{select, signal, sync::mpsc, task::JoinHandle};
 use tokio_context::context::RefContext;
 
+mod cluster;
 mod cmd_server;
 mod command;
 mod config;
+mod connection;
 mod db;
 mod discover;
 mod node;
@@ -70,7 +72,7 @@ pub fn execute_cmd(
 ) {
     let adder = Arc::new(AtomicUsize::new(0));
     for _ in 0..10 {
-        thread::sleep(Duration::from_secs(10));
+        thread::sleep(Duration::from_secs(5));
 
         if server_handler.is_finished() {
             break;
@@ -82,7 +84,6 @@ pub fn execute_cmd(
         let adder_copy = adder.clone();
         runtime.spawn(async move {
             let (dbvalue_tx, mut dbvalue_rx) = mpsc::channel(1);
-            // let cmd = Box::new(HelloCmd { valid: true });
             let cmd = Box::new(HashMapPutCmd {
                 key: String::from("UserConnectStateMap"),
                 member_key: String::from("jason"),

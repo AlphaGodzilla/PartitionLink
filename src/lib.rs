@@ -1,6 +1,8 @@
+pub mod cluster;
 pub mod cmd_server;
 pub mod command;
 pub mod config;
+pub mod connection;
 pub mod db;
 pub mod discover;
 pub mod node;

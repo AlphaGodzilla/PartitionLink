@@ -3,7 +3,7 @@ use std::fmt::Display;
 use ahash::AHashMap;
 use prost::Message;
 
-use crate::db::dbvalue::DBValue;
+use crate::db::{database::Database, dbvalue::DBValue};
 
 use super::ExecutableCommand;
 use anyhow::anyhow;
@@ -20,7 +20,7 @@ impl ExecutableCommand for HashMapPutCmd {
         super::CommandType::WRITE
     }
 
-    fn execute(&self, db: &mut crate::db::Database) -> anyhow::Result<Option<DBValue>> {
+    fn execute(&self, db: &mut Database) -> anyhow::Result<Option<DBValue>> {
         match db.get_mut(&self.key) {
             Some(dbvalue) => match dbvalue {
                 DBValue::Hash(hash) => {
@@ -55,6 +55,10 @@ impl ExecutableCommand for HashMapPutCmd {
         msg.encode(&mut buff)?;
         Ok(buff.freeze())
     }
+
+    fn cmd_id(&self) -> i32 {
+        crate::command::proto::out::Cmd::HashMapPutCmd as i32
+    }
 }
 impl Display for HashMapPutCmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -69,5 +73,14 @@ impl From<super::proto::out::HashMapPutCmd> for HashMapPutCmd {
             member_key: value.member_key,
             member_value: value.member_value.map_or(DBValue::None, |x| x.into()),
         }
+    }
+}
+
+impl TryFrom<super::proto::out::Command> for HashMapPutCmd {
+    type Error = anyhow::Error;
+
+    fn try_from(value: super::proto::out::Command) -> Result<Self, Self::Error> {
+        let cmd = super::proto::out::HashMapPutCmd::decode(&value.value[..])?;
+        Ok(cmd.into())
     }
 }

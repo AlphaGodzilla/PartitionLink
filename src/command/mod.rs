@@ -1,13 +1,16 @@
 use std::{fmt::Display, time::SystemTime};
 
+use hash_get::HashMapGetCmd;
+use hash_put::HashMapPutCmd;
 use hello::HelloCmd;
 use invalid::InvalidCommand;
 use prost::Message;
 use prost_types::Timestamp;
 use tokio::sync::mpsc;
 
+use crate::command::proto::out::Cmd;
 use crate::{
-    db::{dbvalue::DBValue, Database},
+    db::{database::Database, dbvalue::DBValue},
     until,
 };
 
@@ -32,6 +35,9 @@ pub trait ExecutableCommand: Display + Send + Sync {
 
     // 编码为字节数组
     fn encode(&self) -> anyhow::Result<bytes::Bytes>;
+
+    // 编码的命令ID
+    fn cmd_id(&self) -> i32;
 }
 
 pub struct Command {
@@ -79,7 +85,7 @@ impl Command {
             nanos: now_ts_nanos as i32,
         };
         let msg = crate::command::proto::out::Command {
-            cmd: crate::command::proto::out::Cmd::HelloCmd as i32,
+            cmd: self.inner.cmd_id(),
             ts: Some(ts),
             value: self.inner.encode()?.to_vec(),
         };
@@ -101,5 +107,36 @@ impl From<&str> for Command {
             "hello" => Command::new(Box::new(HelloCmd { valid: true }), None),
             _ => Command::new(Box::new(InvalidCommand {}), None),
         }
+    }
+}
+
+impl From<&[u8]> for Command {
+    fn from(value: &[u8]) -> Self {
+        match crate::command::proto::out::Command::decode(value) {
+            Ok(command) => {
+                if let Ok(cmd) = parse_cmd(command) {
+                    return Command::new(cmd, None);
+                } else {
+                    return Command::new(Box::new(InvalidCommand {}), None);
+                }
+            }
+            Err(err) => Command::new(Box::new(InvalidCommand {}), None),
+        }
+    }
+}
+
+fn parse_cmd(
+    cmd: crate::command::proto::out::Command,
+) -> anyhow::Result<Box<dyn ExecutableCommand>> {
+    // let HelloCmd =  as i32;
+    let cmd_id = cmd.cmd;
+    if Cmd::HelloCmd as i32 == cmd_id {
+        return Ok(Box::new(HelloCmd::try_from(cmd)?));
+    } else if Cmd::HashMapPutCmd as i32 == cmd_id {
+        return Ok(Box::new(HashMapPutCmd::try_from(cmd)?));
+    } else if Cmd::HashMapGetCmd as i32 == cmd_id {
+        return Ok(Box::new(HashMapGetCmd::try_from(cmd)?));
+    } else {
+        return Ok(Box::new(InvalidCommand {}));
     }
 }

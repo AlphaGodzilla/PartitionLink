@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use prost::Message;
 
-use crate::db::dbvalue::DBValue;
+use crate::db::{database::Database, dbvalue::DBValue};
 
 use super::ExecutableCommand;
 
@@ -17,7 +17,7 @@ impl ExecutableCommand for HashMapGetCmd {
         super::CommandType::READ
     }
 
-    fn execute(&self, db: &mut crate::db::Database) -> anyhow::Result<Option<DBValue>> {
+    fn execute(&self, db: &mut Database) -> anyhow::Result<Option<DBValue>> {
         if let Some(value) = db.get(&self.key) {
             match value {
                 DBValue::Hash(hash) => {
@@ -38,6 +38,10 @@ impl ExecutableCommand for HashMapGetCmd {
         msg.encode(&mut buff)?;
         Ok(buff.freeze())
     }
+
+    fn cmd_id(&self) -> i32 {
+        crate::command::proto::out::Cmd::HashMapGetCmd as i32
+    }
 }
 
 impl Display for HashMapGetCmd {
@@ -52,5 +56,14 @@ impl From<super::proto::out::HashMapGetCmd> for HashMapGetCmd {
             key: value.key,
             member_key: value.member_key,
         }
+    }
+}
+
+impl TryFrom<super::proto::out::Command> for HashMapGetCmd {
+    type Error = anyhow::Error;
+
+    fn try_from(value: super::proto::out::Command) -> Result<Self, Self::Error> {
+        let cmd = super::proto::out::HashMapGetCmd::decode(&value.value[..])?;
+        Ok(cmd.into())
     }
 }

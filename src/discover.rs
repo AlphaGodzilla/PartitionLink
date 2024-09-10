@@ -65,21 +65,25 @@ impl Discover {
         let my_id_copy = self.node_id.clone();
         let interval_duration = cfg.disc_multicast_interval.clone();
         let ctx = parent_ctx.clone();
-        let node_msg = NodeMsg::new(&my_id_copy, "", self.cfg.listen_port);
-        let node_msg = serde_json::to_string(&node_msg)?;
+        let online_node_msg = NodeMsg::new(&my_id_copy, "", self.cfg.listen_port, true);
+        let online_node_msg = serde_json::to_string(&online_node_msg)?;
+        let offline_node_msg = NodeMsg::new(&my_id_copy, "", self.cfg.listen_port, false);
+        let offline_node_msg = serde_json::to_string(&offline_node_msg)?;
         tokio::spawn(async move {
             info!("Multicast thread startup {}", &multicast_addr);
             let (mut ctx, _handler) = Context::with_parent(&ctx, None);
             let mut timeout_interval = interval(interval_duration);
-            let message = node_msg.as_bytes();
+            let online_message = online_node_msg.as_bytes();
+            let offline_message = offline_node_msg.as_bytes();
             loop {
                 tokio::select! {
                     _ = ctx.done() => {
                         debug!("Multicast thread shutdown");
+                        mutilcast_to_other_node(&socket_ref, multicast_addr.clone(), offline_message).await;
                         break;
                     }
                     _ = timeout_interval.tick() => {
-                        mutilcast_to_other_node(&socket_ref, multicast_addr.clone(), message).await;
+                        mutilcast_to_other_node(&socket_ref, multicast_addr.clone(), online_message).await;
                     }
                 }
             }
@@ -148,6 +152,7 @@ async fn recv_from_other_node(
                 &msg.id,
                 msg.port,
                 is_self,
+                msg.online,
             ))
         }
         Err(err) => {
