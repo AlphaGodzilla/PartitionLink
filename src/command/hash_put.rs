@@ -5,7 +5,10 @@ use prost::Message;
 
 use crate::db::{database::Database, dbvalue::DBValue};
 
-use super::ExecutableCommand;
+use super::{
+    proto::{ProtoCmd, ProtoCommand, ProtoDbValue, ProtoHashMapPutCmd},
+    ExecutableCommand,
+};
 use anyhow::anyhow;
 
 #[derive(Clone)]
@@ -45,10 +48,10 @@ impl ExecutableCommand for HashMapPutCmd {
 
     fn encode(&self) -> anyhow::Result<bytes::Bytes> {
         let mut buff = bytes::BytesMut::new();
-        let msg = super::proto::out::HashMapPutCmd {
+        let msg = ProtoHashMapPutCmd {
             key: self.key.clone(),
             member_key: self.member_key.clone(),
-            member_value: Some(super::proto::out::DbValue {
+            member_value: Some(ProtoDbValue {
                 value: Some(self.member_value.to_protobuf().into()),
             }),
         };
@@ -57,7 +60,7 @@ impl ExecutableCommand for HashMapPutCmd {
     }
 
     fn cmd_id(&self) -> i32 {
-        crate::command::proto::out::Cmd::HashMapPutCmd as i32
+        ProtoCmd::HashMapPutCmd as i32
     }
 }
 impl Display for HashMapPutCmd {
@@ -66,8 +69,8 @@ impl Display for HashMapPutCmd {
     }
 }
 
-impl From<super::proto::out::HashMapPutCmd> for HashMapPutCmd {
-    fn from(value: super::proto::out::HashMapPutCmd) -> Self {
+impl From<ProtoHashMapPutCmd> for HashMapPutCmd {
+    fn from(value: ProtoHashMapPutCmd) -> Self {
         HashMapPutCmd {
             key: value.key,
             member_key: value.member_key,
@@ -76,11 +79,11 @@ impl From<super::proto::out::HashMapPutCmd> for HashMapPutCmd {
     }
 }
 
-impl TryFrom<super::proto::out::Command> for HashMapPutCmd {
+impl TryFrom<ProtoCommand> for HashMapPutCmd {
     type Error = anyhow::Error;
 
-    fn try_from(value: super::proto::out::Command) -> Result<Self, Self::Error> {
-        let cmd = super::proto::out::HashMapPutCmd::decode(&value.value[..])?;
+    fn try_from(value: ProtoCommand) -> Result<Self, Self::Error> {
+        let cmd = ProtoHashMapPutCmd::decode(&value.value[..])?;
         Ok(cmd.into())
     }
 }

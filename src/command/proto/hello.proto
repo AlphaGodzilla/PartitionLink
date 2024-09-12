@@ -2,6 +2,6 @@ syntax = "proto3";
 
 package command.cmd;
 
-message HelloCmd {
+message ProtoHelloCmd {
     bool valid = 1;
 }

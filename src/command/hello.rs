@@ -4,7 +4,10 @@ use prost::Message;
 
 use crate::db::{database::Database, dbvalue::DBValue};
 
-use super::{CommandType, ExecutableCommand};
+use super::{
+    proto::{ProtoCmd, ProtoCommand, ProtoHelloCmd},
+    CommandType, ExecutableCommand,
+};
 
 #[derive(Clone)]
 pub struct HelloCmd {
@@ -22,13 +25,13 @@ impl ExecutableCommand for HelloCmd {
 
     fn encode(&self) -> anyhow::Result<bytes::Bytes> {
         let mut buff = bytes::BytesMut::new();
-        let msg = crate::command::proto::out::HelloCmd { valid: self.valid };
+        let msg = ProtoHelloCmd { valid: self.valid };
         msg.encode(&mut buff)?;
         Ok(buff.freeze())
     }
 
     fn cmd_id(&self) -> i32 {
-        crate::command::proto::out::Cmd::HelloCmd as i32
+        ProtoCmd::HelloCmd as i32
     }
 }
 
@@ -38,17 +41,17 @@ impl Display for HelloCmd {
     }
 }
 
-impl From<super::proto::out::HelloCmd> for HelloCmd {
-    fn from(value: super::proto::out::HelloCmd) -> Self {
+impl From<ProtoHelloCmd> for HelloCmd {
+    fn from(value: ProtoHelloCmd) -> Self {
         HelloCmd { valid: value.valid }
     }
 }
 
-impl TryFrom<super::proto::out::Command> for HelloCmd {
+impl TryFrom<ProtoCommand> for HelloCmd {
     type Error = anyhow::Error;
 
-    fn try_from(value: super::proto::out::Command) -> Result<Self, Self::Error> {
-        let hello_cmd = super::proto::out::HelloCmd::decode(&value.value[..])?;
+    fn try_from(value: ProtoCommand) -> Result<Self, Self::Error> {
+        let hello_cmd = ProtoHelloCmd::decode(&value.value[..])?;
         Ok(hello_cmd.into())
     }
 }

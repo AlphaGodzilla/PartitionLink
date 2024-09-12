@@ -2,28 +2,28 @@ syntax = "proto3";
 
 package command.cmd;
 
-message StringDBValue {
+message ProtoStringDBValue {
     string value = 1;
 }
 
-message BytesDBValue {
+message ProtoBytesDBValue {
     bytes value = 1;
 }
 
-message ListDBValue {
-     repeated DBValue values = 1;
+message ProtoListDBValue {
+     repeated ProtoDBValue values = 1;
 }
 
-message HashDBValue {
-    map<string, DBValue> values = 1;
+message ProtoHashDBValue {
+    map<string, ProtoDBValue> values = 1;
 }
 
-message DBValue {
+message ProtoDBValue {
     oneof value {
         bool none_db_value = 1;
-        StringDBValue string_db_value = 2;
-        BytesDBValue bytes_db_value = 3;
-        ListDBValue list_db_value = 4;
-        HashDBValue hash_db_value = 5;
+        ProtoStringDBValue string_db_value = 2;
+        ProtoBytesDBValue bytes_db_value = 3;
+        ProtoListDBValue list_db_value = 4;
+        ProtoHashDBValue hash_db_value = 5;
     }
 }

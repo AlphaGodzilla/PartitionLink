@@ -6,9 +6,10 @@ use hello::HelloCmd;
 use invalid::InvalidCommand;
 use prost::Message;
 use prost_types::Timestamp;
+use proto::{ProtoCmd, ProtoCommand, ProtoHashMapPutCmd};
+use register_info::parse_proto_command;
 use tokio::sync::mpsc;
 
-use crate::command::proto::out::Cmd;
 use crate::{
     db::{database::Database, dbvalue::DBValue},
     until,
@@ -19,6 +20,7 @@ pub mod hash_put;
 pub mod hello;
 pub mod invalid;
 pub mod proto;
+pub mod register_info;
 
 pub enum CommandType {
     READ,
@@ -84,7 +86,7 @@ impl Command {
             seconds: now_ts_sec,
             nanos: now_ts_nanos as i32,
         };
-        let msg = crate::command::proto::out::Command {
+        let msg = ProtoCommand {
             cmd: self.inner.cmd_id(),
             ts: Some(ts),
             value: self.inner.encode()?.to_vec(),
@@ -110,33 +112,18 @@ impl From<&str> for Command {
     }
 }
 
+// 从字节数组解析Command
 impl From<&[u8]> for Command {
     fn from(value: &[u8]) -> Self {
-        match crate::command::proto::out::Command::decode(value) {
+        match ProtoCommand::decode(value) {
             Ok(command) => {
-                if let Ok(cmd) = parse_cmd(command) {
+                if let Ok(cmd) = parse_proto_command(command) {
                     return Command::new(cmd, None);
                 } else {
                     return Command::new(Box::new(InvalidCommand {}), None);
                 }
             }
-            Err(err) => Command::new(Box::new(InvalidCommand {}), None),
+            Err(_) => Command::new(Box::new(InvalidCommand {}), None),
         }
-    }
-}
-
-fn parse_cmd(
-    cmd: crate::command::proto::out::Command,
-) -> anyhow::Result<Box<dyn ExecutableCommand>> {
-    // let HelloCmd =  as i32;
-    let cmd_id = cmd.cmd;
-    if Cmd::HelloCmd as i32 == cmd_id {
-        return Ok(Box::new(HelloCmd::try_from(cmd)?));
-    } else if Cmd::HashMapPutCmd as i32 == cmd_id {
-        return Ok(Box::new(HashMapPutCmd::try_from(cmd)?));
-    } else if Cmd::HashMapGetCmd as i32 == cmd_id {
-        return Ok(Box::new(HashMapGetCmd::try_from(cmd)?));
-    } else {
-        return Ok(Box::new(InvalidCommand {}));
     }
 }

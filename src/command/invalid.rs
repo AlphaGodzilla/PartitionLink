@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::db::{database::Database, dbvalue::DBValue};
 
-use super::{CommandType, ExecutableCommand};
+use super::{proto::ProtoCmd, CommandType, ExecutableCommand};
 
 #[derive(Clone)]
 pub struct InvalidCommand {}
@@ -21,7 +21,7 @@ impl ExecutableCommand for InvalidCommand {
     }
 
     fn cmd_id(&self) -> i32 {
-        crate::command::proto::out::Cmd::Unknown as i32
+        ProtoCmd::Unknown as i32
     }
 }
 

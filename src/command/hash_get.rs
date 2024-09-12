@@ -4,7 +4,10 @@ use prost::Message;
 
 use crate::db::{database::Database, dbvalue::DBValue};
 
-use super::ExecutableCommand;
+use super::{
+    proto::{ProtoCmd, ProtoCommand, ProtoHashMapGetCmd},
+    ExecutableCommand,
+};
 
 #[derive(Clone)]
 pub struct HashMapGetCmd {
@@ -31,7 +34,7 @@ impl ExecutableCommand for HashMapGetCmd {
 
     fn encode(&self) -> anyhow::Result<bytes::Bytes> {
         let mut buff = bytes::BytesMut::new();
-        let msg = super::proto::out::HashMapGetCmd {
+        let msg = ProtoHashMapGetCmd {
             key: self.key.clone(),
             member_key: self.member_key.clone(),
         };
@@ -40,7 +43,7 @@ impl ExecutableCommand for HashMapGetCmd {
     }
 
     fn cmd_id(&self) -> i32 {
-        crate::command::proto::out::Cmd::HashMapGetCmd as i32
+        ProtoCmd::HashMapGetCmd as i32
     }
 }
 
@@ -50,8 +53,8 @@ impl Display for HashMapGetCmd {
     }
 }
 
-impl From<super::proto::out::HashMapGetCmd> for HashMapGetCmd {
-    fn from(value: super::proto::out::HashMapGetCmd) -> Self {
+impl From<ProtoHashMapGetCmd> for HashMapGetCmd {
+    fn from(value: ProtoHashMapGetCmd) -> Self {
         HashMapGetCmd {
             key: value.key,
             member_key: value.member_key,
@@ -59,11 +62,11 @@ impl From<super::proto::out::HashMapGetCmd> for HashMapGetCmd {
     }
 }
 
-impl TryFrom<super::proto::out::Command> for HashMapGetCmd {
+impl TryFrom<ProtoCommand> for HashMapGetCmd {
     type Error = anyhow::Error;
 
-    fn try_from(value: super::proto::out::Command) -> Result<Self, Self::Error> {
-        let cmd = super::proto::out::HashMapGetCmd::decode(&value.value[..])?;
+    fn try_from(value: ProtoCommand) -> Result<Self, Self::Error> {
+        let cmd = ProtoHashMapGetCmd::decode(&value.value[..])?;
         Ok(cmd.into())
     }
 }

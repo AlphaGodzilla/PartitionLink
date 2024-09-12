@@ -4,13 +4,13 @@ package command.cmd;
 
 import "dbvalue.proto";
 
-message HashMapPutCmd {
+message ProtoHashMapPutCmd {
     string key = 1;
     string member_key = 2;
-    command.cmd.DBValue member_value = 3;
+    command.cmd.ProtoDBValue member_value = 3;
 }
 
-message HashMapGetCmd {
+message ProtoHashMapGetCmd {
     string key = 1;
     string member_key = 2;
 }
