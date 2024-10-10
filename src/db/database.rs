@@ -1,27 +1,25 @@
-use log::{debug, error, info};
-use std::{collections::HashMap, sync::Arc};
-use tokio::{select, sync::mpsc};
+use ahash::AHashMap;
+use log::{error, info};
+use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_context::context::{Context, RefContext};
 
 use crate::{
-    cluster::to_cluster,
+    cluster::{self},
     command::Command,
     connection::manager::ConnectionManager,
-    node::ShareNodeTable,
-    protocol::{frame::Frame, length::Length},
 };
 
 use super::dbvalue::DBValue;
 
 pub struct Database {
-    pub db: HashMap<String, DBValue>,
+    pub db: AHashMap<String, DBValue>,
     pub tx: mpsc::Sender<Command>,
 }
 
 impl Database {
     pub fn new(tx: mpsc::Sender<Command>) -> Self {
         Database {
-            db: HashMap::new(),
+            db: AHashMap::new(),
             tx,
         }
     }
@@ -39,31 +37,34 @@ impl Database {
     }
 }
 
-pub async fn start_database_channel(
+pub fn start_db_cmd_channel(
     ctx: RefContext,
     mut db: Database,
     mut db_recv: mpsc::Receiver<Command>,
     conn_manager: ConnectionManager,
-) -> anyhow::Result<()> {
-    let (mut done_ctx, _handler) = Context::with_parent(&ctx, None);
-    loop {
-        select! {
-            _ = done_ctx.done() => {
-                info!("Database channel loop stop");
-                break;
-            },
-            Some(command) = db_recv.recv() => {
-                match command.execute_and_send(&mut db).await  {
-                    Ok(_) => {
-                        // 集群阶段
-                        if let Err(err) = to_cluster(&conn_manager, &command).await {
-                            error!("to cluster error: {:?}", err)
-                        }
-                    },
-                    Err(err) => error!("Execute command error: {:?}", err)
+) -> anyhow::Result<JoinHandle<()>> {
+    let hander = tokio::spawn(async move {
+        info!("Database channel thread startup");
+        let (mut done_ctx, _handler) = Context::with_parent(&ctx, None);
+        loop {
+            select! {
+                _ = done_ctx.done() => {
+                    info!("Database channel loop stop");
+                    break;
+                },
+                Some(command) = db_recv.recv() => {
+                    match command.execute_and_send(&mut db).await  {
+                        Ok(_) => {
+                            // 集群广播
+                            if let Err(err) = cluster::broadcast(&conn_manager, &command).await {
+                                error!("to cluster error: {:?}", err)
+                            }
+                        },
+                        Err(err) => error!("Execute command error: {:?}", err)
+                    }
                 }
             }
         }
-    }
-    Ok(())
+    });
+    Ok(hander)
 }

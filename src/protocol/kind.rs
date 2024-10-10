@@ -1,25 +1,27 @@
 use super::Segment;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub enum Operator {
+pub enum Kind {
     UNKNOWN,
     PING,
     PONG,
-    OP,
+    CMD,
+    RAFT,
 }
 
-impl From<u8> for Operator {
+impl From<u8> for Kind {
     fn from(value: u8) -> Self {
         match value {
             0 => Self::PING,
             1 => Self::PONG,
-            2 => Self::OP,
+            2 => Self::CMD,
+
             _ => Self::UNKNOWN,
         }
     }
 }
 
-impl Segment for Operator {
+impl Segment for Kind {
     fn bits() -> usize {
         4
     }
@@ -28,7 +30,8 @@ impl Segment for Operator {
         match self {
             Self::PING => 0b0,
             Self::PONG => 0b0000_0001,
-            Self::OP => 0b0000_0010,
+            Self::CMD => 0b0000_0010,
+            Self::RAFT => 0b0000_0011,
             Self::UNKNOWN => 0b0000_1111,
         }
     }
@@ -37,7 +40,7 @@ impl Segment for Operator {
         match byte {
             0b0 => Self::PING,
             0b0000_0001 => Self::PONG,
-            0b0000_0010 => Self::OP,
+            0b0000_0010 => Self::CMD,
             _ => Self::UNKNOWN,
         }
     }

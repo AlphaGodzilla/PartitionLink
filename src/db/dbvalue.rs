@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::command::proto::{
-    self, proto_db_value, ProtoBytesDbValue, ProtoDbValue, ProtoHashDbValue, ProtoListDbValue,
+    proto_db_value, ProtoBytesDbValue, ProtoDbValue, ProtoHashDbValue, ProtoListDbValue,
     ProtoStringDbValue,
 };
 use ahash::AHashMap;

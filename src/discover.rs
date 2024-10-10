@@ -3,15 +3,15 @@ use std::{
     sync::Arc,
 };
 
-use log::{debug, error, info, trace};
+use log::{error, info, trace};
 use socket2::{Domain, Protocol, Socket, Type};
-use tokio::{net::UdpSocket, time::interval};
+use tokio::{net::UdpSocket, select, sync::mpsc, task::JoinHandle, time::interval};
 use tokio_context::context::{Context, RefContext};
 use uuid::Uuid;
 
 use crate::{
     config::Config,
-    node::{Node, NodeMsg},
+    node::{Node, NodeManager, NodeMsg, ShareNodeTable},
 };
 
 pub struct Discover {
@@ -78,7 +78,7 @@ impl Discover {
             loop {
                 tokio::select! {
                     _ = ctx.done() => {
-                        debug!("Multicast thread shutdown");
+                        info!("Multicast thread shutdown");
                         mutilcast_to_other_node(&socket_ref, multicast_addr.clone(), offline_message).await;
                         break;
                     }
@@ -102,7 +102,7 @@ impl Discover {
             loop {
                 tokio::select! {
                     _ = ctx.done() => {
-                        debug!("Listener thread shutdown");
+                        info!("Listener thread shutdown");
                         break;
                     },
                     Some(node) = recv_from_other_node(socket_ref.clone(), &my_id_copy, &mut buf) => {
@@ -160,4 +160,53 @@ async fn recv_from_other_node(
             None
         }
     }
+}
+
+pub fn start_discover(
+    ctx: &RefContext,
+    cfg: Arc<Config>,
+    node_manager: ShareNodeTable,
+) -> anyhow::Result<JoinHandle<()>> {
+    let mut discover = Discover::new(cfg.clone());
+    let mut recv = discover.start(ctx)?;
+
+    let cfg_copy = cfg.clone();
+    let ctx_copy = ctx.clone();
+    let mut node_manager_copy = node_manager.clone();
+    let discover_handler = tokio::spawn(async move {
+        info!("Discover thread startup");
+        let (mut ctx, _handler) = Context::with_parent(&ctx_copy, None);
+        let mut timeout_interval = interval(cfg_copy.disc_multicast_ttl_check_interval.clone());
+        timeout_interval.tick().await;
+        loop {
+            select! {
+                _ = ctx.done() => {
+                    info!("Discover thread shutdown");
+                    break;
+                },
+                _ = on_ping_node(&mut recv, &mut node_manager_copy) => {},
+                _ = timeout_interval.tick() => {
+                    if let Ok(prune_cnt) = node_manager_copy.prune().await {
+                        if prune_cnt > 0 {
+                            info!("Prune complete, remove node count {}", prune_cnt);
+                        }
+                    }
+                }
+            }
+        }
+    });
+    Ok(discover_handler)
+}
+
+async fn on_ping_node(
+    rev: &mut Option<mpsc::Receiver<Node>>,
+    node_manager: &mut ShareNodeTable,
+) -> anyhow::Result<()> {
+    if let Some(recv) = rev {
+        if let Some(msg) = recv.recv().await {
+            trace!("Recv node ping {:?}", &msg);
+            node_manager.ping(msg).await?;
+        }
+    }
+    Ok(())
 }

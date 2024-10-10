@@ -40,12 +40,12 @@ fn main() {
     let (tx, rx) = mpsc::channel(32);
     let db = Database::new(tx.clone());
 
-    let send_cmd = option_env!("SEND_CMD_MODE");
+    let send_cmd = option_env!("LOCAL_CMD_MODE");
     if send_cmd.is_some() {
-        info!("SEND_CMD_MODE set, running server and execute command mode");
+        info!("LOCAL_CMD_MODE set, running server and execute command mode");
         interval_execute_cmd(&runtime, db, tx.clone(), rx);
     } else {
-        info!("SEND_CMD_MODE unset, running only server mode");
+        info!("LOCAL_CMD_MODE unset, running only server mode");
         // 阻塞当前线程
         runtime.block_on(async move { start_runtime(db, rx).await.unwrap() });
     }

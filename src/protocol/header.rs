@@ -1,12 +1,12 @@
 use log::trace;
 
-use super::{head::Head, op::Operator, version::Version, Segment};
+use super::{head::Head, kind::Kind, version::Version, Segment};
 
 #[derive(Debug)]
 pub struct Header {
     pub head: Head,
     pub version: Version,
-    pub op: Operator,
+    pub kind: Kind,
 }
 
 impl Segment for Header {
@@ -23,10 +23,10 @@ impl Segment for Header {
         byte |= self.version.to_byte() << (8 - Version::bits() - count);
         trace!("version left move {}", 8 - Version::bits() - count);
         count += Version::bits();
-        byte |= self.op.to_byte() << (8 - Operator::bits()) >> (8 - Operator::bits())
-            << (8 - Operator::bits() - count);
-        trace!("op left move {}", 8 - Operator::bits() - count);
-        print!("op phase: {}", byte);
+        byte |= self.kind.to_byte() << (8 - Kind::bits()) >> (8 - Kind::bits())
+            << (8 - Kind::bits() - count);
+        trace!("op left move {}", 8 - Kind::bits() - count);
+        // println!("op phase: {}", byte);
         byte
     }
 
@@ -34,9 +34,7 @@ impl Segment for Header {
         Header {
             head: Head::from_byte(byte >> (8 - Head::bits())),
             version: Version::new(byte << Head::bits() >> (8 - Version::bits())).unwrap(),
-            op: Operator::from_byte(
-                byte << Head::bits() << Version::bits() >> (8 - Operator::bits()),
-            ),
+            kind: Kind::from_byte(byte << Head::bits() << Version::bits() >> (8 - Kind::bits())),
         }
     }
 }

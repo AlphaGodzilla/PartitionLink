@@ -1,10 +1,10 @@
-use std::{io::Cursor, sync::Arc};
+use std::sync::Arc;
 
-use bytes::{Buf, BytesMut};
 use log::{debug, error, info, trace};
 use tokio::{
     net::{TcpListener, TcpStream},
     select,
+    task::JoinHandle,
 };
 use tokio_context::context::{Context, RefContext};
 
@@ -12,32 +12,34 @@ use crate::{
     command::Command,
     config::Config,
     connection::connection::Connection,
-    protocol::{
-        frame::{Frame, FrameMatchResult},
-        op::Operator,
-    },
+    protocol::{frame::Frame, kind::Kind},
 };
+use crate::protocol::{CURRENT_VERSION, Segment};
 
-pub async fn start_cmd_server(ctx: RefContext, cfg: Arc<Config>) -> anyhow::Result<()> {
+pub fn start_cmd_server(ctx: RefContext, cfg: Arc<Config>) -> anyhow::Result<JoinHandle<()>> {
     let addr = String::from(&cfg.listen_addr);
     let port = cfg.listen_port;
     let bind = format!("{}:{}", addr, port);
-    info!("Listening at: {}", bind);
-    let tcp_listener = TcpListener::bind(bind).await?;
-    let (mut done_ctx, _handler) = Context::with_parent(&ctx, None);
+    info!("Command server listening at: {}", bind);
     // info!("Ready to accept command incoming!");
-    loop {
-        // debug!("Ready to acceot new connection");
-        select! {
-            _ = done_ctx.done() => {
-                info!("Command server loop stop");
-                break;
-            },
-            _ = accept(ctx.clone(), cfg.clone(), &tcp_listener) => {
+
+    let handler = tokio::spawn(async move {
+        let (mut done_ctx, _handler) = Context::with_parent(&ctx, None);
+        let tcp_listener = TcpListener::bind(bind).await.unwrap();
+        info!("Command server thread startup");
+        loop {
+            // debug!("Ready to acceot new connection");
+            select! {
+                _ = done_ctx.done() => {
+                    info!("Command server loop stop");
+                    break;
+                },
+                _ = accept(ctx.clone(), cfg.clone(), &tcp_listener) => {
+                }
             }
         }
-    }
-    Ok(())
+    });
+    Ok(handler)
 }
 
 async fn accept(ctx: RefContext, cfg: Arc<Config>, tcp_listener: &TcpListener) {
@@ -49,9 +51,9 @@ async fn accept(ctx: RefContext, cfg: Arc<Config>, tcp_listener: &TcpListener) {
             let ctx = ctx.clone();
             // 在另外的线程进行处理
             tokio::spawn(async move {
-                debug!("new connect {}", &addr);
+                info!("new connect {}", &addr);
                 connection(ctx, cfg, socket).await;
-                debug!("disconnect {}", &addr);
+                info!("disconnect {}", &addr);
             });
         }
         Err(err) => {
@@ -73,7 +75,7 @@ async fn connection(ctx: RefContext, cfg: Arc<Config>, stream: TcpStream) {
                     Ok(cmd_opt) => {
                         match cmd_opt {
                             Some(cmd) => {
-                                debug!("Recv Command: {}", cmd);
+                                debug!("receive new command: {}", cmd);
                                 // TODO: execute Command
                             }
                             None => {
@@ -95,20 +97,22 @@ async fn connection(ctx: RefContext, cfg: Arc<Config>, stream: TcpStream) {
 
 async fn read_cmd(conn: &mut Connection) -> anyhow::Result<Option<Command>> {
     let mut frames: Vec<Frame> = Vec::with_capacity(1);
-    let mut op: Operator = Operator::UNKNOWN;
+    if !conn.readable().await? {
+        return Ok(None);
+    }
     loop {
         match conn.read_frame().await? {
             Some(frame) => {
-                if op == Operator::UNKNOWN {
-                    op = frame.header.op.clone();
+                // 检查帧的合法信
+                if frame.header.version.to_byte() != CURRENT_VERSION {
+                    return Err(anyhow::anyhow!("incorrect protocol version"));
+                }
+                if frame.header.kind != Kind::CMD {
+                    return Err(anyhow::anyhow!("not command frame"));
                 }
                 if frame.is_last() {
                     frames.push(frame);
                     return Ok(Some(parse_cmd(&frames)));
-                }
-                if frame.header.op != op {
-                    // different kind frame
-                    return Err(anyhow::anyhow!("different kind frame"));
                 }
                 frames.push(frame);
             }

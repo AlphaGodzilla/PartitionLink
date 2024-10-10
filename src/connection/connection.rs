@@ -1,16 +1,10 @@
 use std::{
-    cell::RefCell,
-    error, fmt,
-    io::Cursor,
-    net::SocketAddr,
+    io::{Cursor, Write},
     ops::{Deref, DerefMut},
-    sync::RwLock,
 };
 
-use async_trait::async_trait;
 use bytes::{Buf, BytesMut};
-use log::trace;
-use r2d2::ManageConnection;
+use log::{info, trace};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, Interest},
     net::{
@@ -24,6 +18,7 @@ use crate::{
     node::Node,
     protocol::frame::{Frame, FrameMatchResult},
 };
+use crate::protocol::frame::FrameMissMatchReason;
 
 pub struct Connection {
     read_stream: Mutex<OwnedReadHalf>,
@@ -84,19 +79,14 @@ impl Connection {
 
             {
                 let mut read_stream = self.read_stream.lock().await;
-                read_stream.readable().await?;
-
                 if 0 == read_stream.read_buf(&mut self.read_buf).await? {
-                    // The remote closed the connection. For this to be
-                    // a clean shutdown, there should be no data in the
-                    // read buffer. If there is, this means that the
-                    // peer closed the socket while sending a frame.
                     if self.read_buf.is_empty() {
                         return Ok(None);
                     } else {
                         return Err(anyhow::anyhow!("connection reset by peer"));
                     }
                 }
+                info!("read_buf {:?}", &self.read_buf[..])
             }
         }
     }
@@ -120,7 +110,13 @@ impl Connection {
                     Ok(None)
                 }
                 FrameMatchResult::MissMatch(reason) => {
-                    trace!("MissMatch: reason={}", reason);
+                    trace!("MissMatch: reason={:?}", reason);
+                    match reason {
+                        FrameMissMatchReason::NoneMagic => {
+                            self.read_buf.clear();
+                        }
+                        _ => {}
+                    }
                     Ok(None)
                 }
             },
@@ -158,5 +154,30 @@ impl Deref for NodeConnection {
 impl DerefMut for NodeConnection {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.conn
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use bytes::{Buf, BytesMut};
+
+    #[test]
+    fn bytes_advance_test() {
+        // 创建一个新的 BytesMut 实例，并填充一些数据
+        let data = vec![0x01, 0x02, 0x03, 0x04, 0x05];
+        let mut buf = BytesMut::from(&data[..]);
+
+        println!("Original buffer: {:?}", buf); // 输出原始缓冲区内容
+                                                // 前进两个字节
+        buf.advance(2);
+
+        println!("Buffer after advancing 2 bytes: {:?}", buf); // 输出前进后的缓冲区内容
+    }
+
+    #[test]
+    fn slice_test() {
+        let vec = vec![1, 2, 3];
+        println!("vec[..]: {:?}", &vec[..]);
+        println!("vec[..3]: {:?}", &vec[..3]);
     }
 }

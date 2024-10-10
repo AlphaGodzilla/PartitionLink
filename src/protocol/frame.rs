@@ -2,17 +2,30 @@ use std::io::Cursor;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use log::trace;
+use crate::protocol::frame::FrameMissMatchReason::{InvalidKind, InvalidPayload, InvalidVersion, NoneMagic};
 
 use super::{
-    head::Head, header::Header, length::Length, op::Operator, version::Version, Segment,
+    head::Head, header::Header, kind::Kind, length::Length, version::Version, Segment,
     CURRENT_VERSION, MAGIC_PREFIX,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FrameMatchResult<'a> {
     Incomplete(&'a str),
-    MissMatch(&'a str),
+    MissMatch(FrameMissMatchReason),
     Complete,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FrameMissMatchReason {
+    // 无魔法值
+    NoneMagic,
+    // 无效的帧协议版本
+    InvalidVersion,
+    // 无效的帧类型
+    InvalidKind,
+    // payload长度不足
+    InvalidPayload
 }
 
 #[derive(Debug)]
@@ -27,8 +40,8 @@ impl Frame {
         Frame {
             header: Header {
                 head: Head::FIN,
-                version: Version::new(CURRENT_VERSION).expect("version constract error"),
-                op: Operator::OP,
+                version: Version::new(CURRENT_VERSION).expect("version construct error"),
+                kind: Kind::CMD,
             },
             length: Length::new(0),
             payload: Vec::new(),
@@ -46,8 +59,8 @@ impl Frame {
         self
     }
 
-    pub fn set_op(&mut self, cmd: Operator) -> &mut Frame {
-        self.header.op = cmd;
+    pub fn set_kind(&mut self, cmd: Kind) -> &mut Frame {
+        self.header.kind = cmd;
         self
     }
 
@@ -97,6 +110,10 @@ impl Frame {
     }
 
     pub fn check<'a>(cursor: &mut Cursor<&[u8]>) -> anyhow::Result<FrameMatchResult<'a>> {
+        Frame::check_with_option(cursor, false, false)
+    }
+
+    fn check_with_option<'a>(cursor: &mut Cursor<&[u8]>, check_version: bool, check_kind: bool) -> anyhow::Result<FrameMatchResult<'a>> {
         // check magic
         let has_remain = cursor.has_remaining();
         if !has_remain {
@@ -105,7 +122,7 @@ impl Frame {
         let magic_prefix: u8 = cursor.get_u8();
         if magic_prefix != MAGIC_PREFIX {
             trace!("magic, {}", magic_prefix);
-            return Ok(FrameMatchResult::MissMatch("magic"));
+            return Ok(FrameMatchResult::MissMatch(NoneMagic));
         }
 
         // check header
@@ -117,13 +134,13 @@ impl Frame {
         let header = Header::from_byte(header);
 
         // check version
-        if header.version.to_byte() != CURRENT_VERSION {
-            return Ok(FrameMatchResult::MissMatch("version"));
+        if check_version && header.version.to_byte() != CURRENT_VERSION {
+            return Ok(FrameMatchResult::MissMatch(InvalidVersion));
         }
 
-        // checke op
-        if header.op == Operator::UNKNOWN {
-            return Ok(FrameMatchResult::MissMatch("op"));
+        // check kind
+        if check_kind && header.kind == Kind::UNKNOWN {
+            return Ok(FrameMatchResult::MissMatch(InvalidKind));
         }
 
         // check length
@@ -137,10 +154,10 @@ impl Frame {
             // [1,2,3,4]
             let pos = cursor.position() as usize;
             let len = cursor.get_ref().len();
-            let remian_len = len - pos;
-            if remian_len != (length as usize) {
+            let remain_len = len - pos;
+            if remain_len < (length as usize) {
                 // payload长度不符合
-                return Ok(FrameMatchResult::MissMatch("length"));
+                return Ok(FrameMatchResult::MissMatch(InvalidPayload));
             }
         }
         Ok(FrameMatchResult::Complete)
@@ -161,10 +178,11 @@ mod test {
         frame::{Frame, FrameMatchResult},
         head::Head,
         header::Header,
-        op::Operator,
+        kind::Kind,
         version::Version,
         Segment, CURRENT_VERSION, MAGIC_PREFIX,
     };
+    use crate::protocol::frame::FrameMissMatchReason::{InvalidKind, InvalidPayload, InvalidVersion, NoneMagic};
 
     #[test]
     fn version_test() {
@@ -214,12 +232,16 @@ mod test {
         // op
         let op;
         if mistake_op {
-            op = Operator::UNKNOWN;
+            op = Kind::UNKNOWN;
         } else {
-            op = Operator::OP;
+            op = Kind::CMD;
         }
 
-        let header = Header { head, version, op };
+        let header = Header {
+            head,
+            version,
+            kind: op,
+        };
         println!("header is {:?}, bytes={:?}", &header, header.to_byte());
         buff.put_u8(header.to_byte());
         // length
@@ -238,8 +260,8 @@ mod test {
         let mistake_magic_buff = build_complete_bytes_buff(true, false, false, false);
         let mut cursor = Cursor::new(&mistake_magic_buff[..]);
         assert_eq!(
-            Frame::check(&mut cursor).unwrap(),
-            FrameMatchResult::MissMatch("magic")
+            Frame::check_with_option(&mut cursor, true, true).unwrap(),
+            FrameMatchResult::MissMatch(NoneMagic)
         );
     }
 
@@ -248,8 +270,8 @@ mod test {
         let buff = build_complete_bytes_buff(false, true, false, false);
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
-            Frame::check(&mut cursor).unwrap(),
-            FrameMatchResult::MissMatch("version")
+            Frame::check_with_option(&mut cursor, true, true).unwrap(),
+            FrameMatchResult::MissMatch(InvalidVersion)
         );
     }
 
@@ -259,8 +281,8 @@ mod test {
         println!("mismatch_frame_check_for_op_test#buff={:?}", &buff[..]);
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
-            Frame::check(&mut cursor).unwrap(),
-            FrameMatchResult::MissMatch("op")
+            Frame::check_with_option(&mut cursor, true, true).unwrap(),
+            FrameMatchResult::MissMatch(InvalidKind)
         );
     }
 
@@ -269,7 +291,7 @@ mod test {
         let buff = bytes::BytesMut::new();
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
-            Frame::check(&mut cursor).unwrap(),
+            Frame::check_with_option(&mut cursor, true, true).unwrap(),
             FrameMatchResult::Incomplete("no_data")
         );
     }
@@ -279,8 +301,8 @@ mod test {
         let buff = build_complete_bytes_buff(false, false, false, true);
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
-            Frame::check(&mut cursor).unwrap(),
-            FrameMatchResult::MissMatch("length")
+            Frame::check_with_option(&mut cursor, true, true).unwrap(),
+            FrameMatchResult::MissMatch(InvalidPayload)
         );
     }
 
@@ -289,7 +311,7 @@ mod test {
         let buff = build_complete_bytes_buff(false, false, false, false);
         let mut cursor = Cursor::new(&buff[..]);
         assert_eq!(
-            Frame::check(&mut cursor).unwrap(),
+            Frame::check_with_option(&mut cursor, true, true).unwrap(),
             FrameMatchResult::Complete
         );
     }

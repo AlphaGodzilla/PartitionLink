@@ -1,19 +1,19 @@
-use std::{fmt::Display, time::SystemTime};
+use std::fmt::Display;
+use log::trace;
 
-use hash_get::HashMapGetCmd;
-use hash_put::HashMapPutCmd;
 use hello::HelloCmd;
 use invalid::InvalidCommand;
 use prost::Message;
 use prost_types::Timestamp;
-use proto::{ProtoCmd, ProtoCommand, ProtoHashMapPutCmd};
+use proto::ProtoCommand;
 use register_info::parse_proto_command;
 use tokio::sync::mpsc;
 
-use crate::{
-    db::{database::Database, dbvalue::DBValue},
-    until,
-};
+use crate::db::{database::Database, dbvalue::DBValue};
+use crate::protocol::frame::Frame;
+use crate::protocol::kind::Kind;
+use crate::protocol::length::Length;
+use crate::protocol::MAX_PAYLOAD_LENGTH;
 
 pub mod hash_get;
 pub mod hash_put;
@@ -77,11 +77,16 @@ impl Command {
         Ok(())
     }
 
-    pub fn encode(&self) -> anyhow::Result<bytes::Bytes> {
-        let now_ts = until::now_ts()? as i64;
-        let now_ts_sec: i64 = now_ts / 1000;
-        let now_ts_mills: i64 = now_ts - now_ts_sec * 1000;
-        let now_ts_nanos: i64 = now_ts_mills * 1000000;
+    pub fn encode_to_payload(&self) -> anyhow::Result<bytes::Bytes> {
+        // let now_ts = until::now_ts()? as i64;
+        // let now_ts_sec: i64 = now_ts / 1000;
+        // let now_ts_mills: i64 = now_ts - now_ts_sec * 1000;
+        // let now_ts_nanos: i64 = now_ts_mills * 1000000;
+        let now_ts = 0;
+        let now_ts_sec: i64 = 0;
+        let now_ts_mills: i64 = 0;
+        let now_ts_nanos: i64 = 0;
+
         let ts = Timestamp {
             seconds: now_ts_sec,
             nanos: now_ts_nanos as i32,
@@ -95,6 +100,42 @@ impl Command {
         msg.encode(&mut buff)?;
         Ok(buff.freeze())
     }
+
+    pub fn encode_to_frames(&self) -> anyhow::Result<Vec<Frame>> {
+        let payload = self.encode_to_payload()?;
+        let mut chunks = payload.chunks(MAX_PAYLOAD_LENGTH as usize).peekable();
+        let chunks_size = chunks.len();
+        let mut current_chunk = 0;
+        let mut frames = Vec::new();
+        loop {
+            if chunks.peek().is_none() {
+                trace!("command chunk is none, break loop");
+                break;
+            }
+            if let Some(chunk) = chunks.next() {
+                current_chunk += 1;
+                trace!("next chunk current chunk {}", current_chunk);
+                let is_last = current_chunk == chunks_size;
+                let frame_head;
+                if is_last {
+                    frame_head = crate::protocol::head::Head::FIN;
+                } else {
+                    frame_head = crate::protocol::head::Head::UNFIN;
+                }
+                let mut frame = Frame::new();
+                let mut payload = Vec::with_capacity(chunk.len());
+                payload.extend_from_slice(chunk);
+                frame
+                    .set_head(frame_head)
+                    .set_kind(Kind::CMD)
+                    .set_length(Length::new(chunk.len() as u8))
+                    .set_payload(payload);
+                frames.push(frame);
+            }
+        }
+        Ok(frames)
+    }
+
 }
 
 impl Display for Command {
