@@ -14,11 +14,11 @@ use tokio::{
     sync::Mutex,
 };
 
+use crate::protocol::frame::FrameMissMatchReason;
 use crate::{
     node::Node,
     protocol::frame::{Frame, FrameMatchResult},
 };
-use crate::protocol::frame::FrameMissMatchReason;
 
 pub struct Connection {
     read_stream: Mutex<OwnedReadHalf>,

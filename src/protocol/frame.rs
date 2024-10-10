@@ -1,8 +1,10 @@
 use std::io::Cursor;
 
+use crate::protocol::frame::FrameMissMatchReason::{
+    InvalidKind, InvalidPayload, InvalidVersion, NoneMagic,
+};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use log::trace;
-use crate::protocol::frame::FrameMissMatchReason::{InvalidKind, InvalidPayload, InvalidVersion, NoneMagic};
 
 use super::{
     head::Head, header::Header, kind::Kind, length::Length, version::Version, Segment,
@@ -25,7 +27,7 @@ pub enum FrameMissMatchReason {
     // 无效的帧类型
     InvalidKind,
     // payload长度不足
-    InvalidPayload
+    InvalidPayload,
 }
 
 #[derive(Debug)]
@@ -113,7 +115,11 @@ impl Frame {
         Frame::check_with_option(cursor, false, false)
     }
 
-    fn check_with_option<'a>(cursor: &mut Cursor<&[u8]>, check_version: bool, check_kind: bool) -> anyhow::Result<FrameMatchResult<'a>> {
+    fn check_with_option<'a>(
+        cursor: &mut Cursor<&[u8]>,
+        check_version: bool,
+        check_kind: bool,
+    ) -> anyhow::Result<FrameMatchResult<'a>> {
         // check magic
         let has_remain = cursor.has_remaining();
         if !has_remain {
@@ -174,6 +180,9 @@ mod test {
 
     use bytes::{BufMut, BytesMut};
 
+    use crate::protocol::frame::FrameMissMatchReason::{
+        InvalidKind, InvalidPayload, InvalidVersion, NoneMagic,
+    };
     use crate::protocol::{
         frame::{Frame, FrameMatchResult},
         head::Head,
@@ -182,7 +191,6 @@ mod test {
         version::Version,
         Segment, CURRENT_VERSION, MAGIC_PREFIX,
     };
-    use crate::protocol::frame::FrameMissMatchReason::{InvalidKind, InvalidPayload, InvalidVersion, NoneMagic};
 
     #[test]
     fn version_test() {

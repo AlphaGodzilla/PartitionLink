@@ -8,13 +8,13 @@ use tokio::{
 };
 use tokio_context::context::{Context, RefContext};
 
+use crate::protocol::{Segment, CURRENT_VERSION};
 use crate::{
     command::Command,
     config::Config,
     connection::connection::Connection,
     protocol::{frame::Frame, kind::Kind},
 };
-use crate::protocol::{CURRENT_VERSION, Segment};
 
 pub fn start_cmd_server(ctx: RefContext, cfg: Arc<Config>) -> anyhow::Result<JoinHandle<()>> {
     let addr = String::from(&cfg.listen_addr);

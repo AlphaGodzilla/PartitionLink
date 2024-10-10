@@ -1,12 +1,9 @@
 use log::{debug, error};
-use tokio::{
-    io::AsyncWriteExt,
-    net::TcpSocket,
-};
 use tokio::io::BufWriter;
+use tokio::{io::AsyncWriteExt, net::TcpSocket};
 
-use crate::command::Command;
 use crate::command::hello::HelloCmd;
+use crate::command::Command;
 
 mod cluster;
 mod cmd_server;
@@ -33,9 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             error!("连接断开");
             break;
         }
-        let send_command = Command::new(Box::new(HelloCmd {
-            valid
-        }), None);
+        let send_command = Command::new(Box::new(HelloCmd { valid }), None);
         valid = !valid;
         debug!("编码Command为数据帧");
         let frames = send_command.encode_to_frames()?;

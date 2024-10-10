@@ -1,5 +1,5 @@
-use std::fmt::Display;
 use log::trace;
+use std::fmt::Display;
 
 use hello::HelloCmd;
 use invalid::InvalidCommand;
@@ -135,7 +135,6 @@ impl Command {
         }
         Ok(frames)
     }
-
 }
 
 impl Display for Command {

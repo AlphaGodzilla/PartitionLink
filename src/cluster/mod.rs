@@ -1,10 +1,6 @@
 use log::{debug, trace};
 
-use crate::{
-    command::Command,
-    connection::manager::ConnectionManager,
-    protocol::frame::Frame,
-};
+use crate::{command::Command, connection::manager::ConnectionManager, protocol::frame::Frame};
 
 pub mod raft;
 
