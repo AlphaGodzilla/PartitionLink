@@ -4,7 +4,8 @@ use std::{
 };
 
 use bytes::{Buf, BytesMut};
-use log::{info, trace};
+use log::{info, log_enabled, trace};
+use tokio::io::{BufReader, BufWriter};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, Interest},
     net::{
@@ -21,19 +22,26 @@ use crate::{
 };
 
 pub struct Connection {
+    peer_addr: String,
     read_stream: Mutex<OwnedReadHalf>,
-    write_stream: Mutex<OwnedWriteHalf>,
-    read_buf: BytesMut,
+    write_stream: Mutex<BufWriter<OwnedWriteHalf>>,
+    read_buf: Mutex<BytesMut>,
 }
 
 impl Connection {
     pub fn new(stream: TcpStream) -> Self {
+        let peer_addr = stream.peer_addr().unwrap().to_string();
         let (read, write) = stream.into_split();
         Connection {
+            peer_addr,
             read_stream: Mutex::new(read),
-            write_stream: Mutex::new(write),
-            read_buf: BytesMut::new(),
+            write_stream: Mutex::new(BufWriter::new(write)),
+            read_buf: Mutex::new(BytesMut::new()),
         }
+    }
+
+    pub fn get_peer_addr(&self) -> &str {
+        &self.peer_addr
     }
 
     pub async fn readable(&self) -> anyhow::Result<bool> {
@@ -51,6 +59,7 @@ impl Connection {
             .write_stream
             .lock()
             .await
+            .get_ref()
             .ready(Interest::WRITABLE)
             .await?
             .is_writable())
@@ -69,31 +78,35 @@ impl Connection {
     /// Read a frame from the connection.
     ///
     /// Returns `None` if EOF is reached
-    pub async fn read_frame(&mut self) -> anyhow::Result<Option<Frame>> {
+    pub async fn read_frame(&self) -> anyhow::Result<Option<Frame>> {
         loop {
             {
-                if let Some(frame) = self.parse_frame()? {
+                if let Some(frame) = self.parse_frame().await? {
                     return Ok(Some(frame));
                 }
             }
 
             {
                 let mut read_stream = self.read_stream.lock().await;
-                if 0 == read_stream.read_buf(&mut self.read_buf).await? {
-                    if self.read_buf.is_empty() {
+                let mut read_buf = self.read_buf.lock().await;
+                if 0 == read_stream.read_buf(read_buf.deref_mut()).await? {
+                    if read_buf.is_empty() {
                         return Ok(None);
                     } else {
                         return Err(anyhow::anyhow!("connection reset by peer"));
                     }
                 }
-                info!("read_buf {:?}", &self.read_buf[..])
+                if log_enabled!(log::Level::Trace) {
+                    trace!("read_buf {:?}", &read_buf[..])
+                }
             }
         }
     }
 
-    pub fn parse_frame(&mut self) -> anyhow::Result<Option<Frame>> {
-        let mut buf = Cursor::new(&self.read_buf[..]);
-        trace!("before check buff: {:?}", &self.read_buf[..]);
+    pub async fn parse_frame(&self) -> anyhow::Result<Option<Frame>> {
+        let mut read_buf = self.read_buf.lock().await;
+        let mut buf = Cursor::new(&read_buf[..]);
+        trace!("before check buff: {:?}", &read_buf[..]);
         match Frame::check(&mut buf) {
             Ok(state) => match state {
                 FrameMatchResult::Complete => {
@@ -101,7 +114,7 @@ impl Connection {
                     buf.set_position(0);
                     let frame = Frame::parse(&mut buf)?;
                     let len = buf.position() as usize;
-                    self.read_buf.advance(len);
+                    read_buf.advance(len);
                     trace!("got frame {:?}", &frame);
                     Ok(Some(frame))
                 }
@@ -113,7 +126,7 @@ impl Connection {
                     trace!("MissMatch: reason={:?}", reason);
                     match reason {
                         FrameMissMatchReason::NoneMagic => {
-                            self.read_buf.clear();
+                            read_buf.clear();
                         }
                         _ => {}
                     }
@@ -125,9 +138,12 @@ impl Connection {
     }
 
     /// Write a frame to the connection.
-    pub async fn write_frame(&self, frame: &mut Frame) -> anyhow::Result<()> {
+    pub async fn write_frame(&self, frames: &mut [Frame]) -> anyhow::Result<()> {
         let mut write_stream = self.write_stream.lock().await;
-        write_stream.write_all(frame.encode()).await?;
+        for mut frame in frames {
+            write_stream.write(frame.encode()).await?;
+        }
+        write_stream.flush().await?;
         Ok(())
     }
 }

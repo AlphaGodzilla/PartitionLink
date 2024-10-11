@@ -4,6 +4,7 @@ use super::{
     hello::HelloCmd,
     invalid::InvalidCommand,
     proto::{ProtoCmd, ProtoCommand},
+    raft::RaftCmd,
     ExecutableCommand,
 };
 
@@ -13,6 +14,7 @@ pub fn parse_proto_command(cmd: ProtoCommand) -> anyhow::Result<Box<dyn Executab
         ProtoCmd::HelloCmd => Ok(Box::new(HelloCmd::try_from(cmd)?)),
         ProtoCmd::HashMapPutCmd => Ok(Box::new(HashMapPutCmd::try_from(cmd)?)),
         ProtoCmd::HashMapGetCmd => Ok(Box::new(HashMapGetCmd::try_from(cmd)?)),
+        ProtoCmd::RaftCmd => Ok(Box::new(RaftCmd::try_from(cmd)?)),
         _ => Ok(Box::new(InvalidCommand {})),
     }
 }

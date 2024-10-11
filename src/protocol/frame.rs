@@ -8,7 +8,7 @@ use log::trace;
 
 use super::{
     head::Head, header::Header, kind::Kind, length::Length, version::Version, Segment,
-    CURRENT_VERSION, MAGIC_PREFIX,
+    CURRENT_VERSION, MAGIC_PREFIX, MAX_PAYLOAD_LENGTH,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,6 +49,20 @@ impl Frame {
             payload: Vec::new(),
             encode_raw: None,
         }
+    }
+
+    pub fn new_ping() -> Self {
+        let mut ping = Frame::new();
+        ping.set_head(Head::FIN);
+        ping.set_kind(Kind::PING);
+        ping
+    }
+
+    pub fn new_pong() -> Self {
+        let mut pong = Frame::new();
+        pong.set_head(Head::FIN);
+        pong.set_kind(Kind::PONG);
+        pong
     }
 
     pub fn set_header(&mut self, header: Header) -> &mut Frame {
@@ -172,6 +186,40 @@ impl Frame {
     pub fn is_last(&self) -> bool {
         self.header.head == Head::FIN
     }
+}
+
+pub fn build_frames(kind: Kind, payload: &[u8]) -> anyhow::Result<Vec<Frame>> {
+    let mut chunks = payload.chunks(MAX_PAYLOAD_LENGTH as usize).peekable();
+    let chunks_size = chunks.len();
+    let mut current_chunk = 0;
+    let mut frames = Vec::new();
+    loop {
+        if chunks.peek().is_none() {
+            trace!("command chunk is none, break loop");
+            break;
+        }
+        if let Some(chunk) = chunks.next() {
+            current_chunk += 1;
+            trace!("next chunk current chunk {}", current_chunk);
+            let is_last = current_chunk == chunks_size;
+            let frame_head;
+            if is_last {
+                frame_head = crate::protocol::head::Head::FIN;
+            } else {
+                frame_head = crate::protocol::head::Head::UNFIN;
+            }
+            let mut frame = Frame::new();
+            let mut payload = Vec::with_capacity(chunk.len());
+            payload.extend_from_slice(chunk);
+            frame
+                .set_head(frame_head)
+                .set_kind(Kind::CMD)
+                .set_length(Length::new(chunk.len() as u8))
+                .set_payload(payload);
+            frames.push(frame);
+        }
+    }
+    Ok(frames)
 }
 
 #[cfg(test)]

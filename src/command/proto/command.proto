@@ -9,6 +9,7 @@ enum ProtoCmd {
     HELLO_CMD = 1;
     HASH_MAP_PUT_CMD = 2;
     HASH_MAP_GET_CMD = 3;
+    RAFT_CMD = 4;
 }
 
 message ProtoCommand {

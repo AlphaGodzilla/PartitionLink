@@ -1,13 +1,20 @@
-use std::sync::Arc;
+use std::{
+    cell::RefCell,
+    fmt::{Debug, Error},
+    sync::Arc,
+};
 
-use log::{debug, error, info, trace};
+use bytes::BytesMut;
+use log::{debug, error, info, log_enabled, trace, warn};
 use tokio::{
     net::{TcpListener, TcpStream},
     select,
+    sync::mpsc,
     task::JoinHandle,
 };
 use tokio_context::context::{Context, RefContext};
 
+use crate::protocol::frame;
 use crate::protocol::{Segment, CURRENT_VERSION};
 use crate::{
     command::Command,
@@ -52,7 +59,7 @@ async fn accept(ctx: RefContext, cfg: Arc<Config>, tcp_listener: &TcpListener) {
             // 在另外的线程进行处理
             tokio::spawn(async move {
                 info!("new connect {}", &addr);
-                connection(ctx, cfg, socket).await;
+                connection(ctx, socket, None).await;
                 info!("disconnect {}", &addr);
             });
         }
@@ -62,31 +69,37 @@ async fn accept(ctx: RefContext, cfg: Arc<Config>, tcp_listener: &TcpListener) {
     };
 }
 
-async fn connection(ctx: RefContext, cfg: Arc<Config>, stream: TcpStream) {
+pub async fn connection(
+    ctx: RefContext,
+    stream: TcpStream,
+    mut send_msg_box: Option<mpsc::Receiver<Vec<Frame>>>,
+) {
     let (mut ctx, _handler) = Context::with_parent(&ctx, None);
-    let mut conn = Connection::new(stream);
+    let conn = Connection::new(stream);
     loop {
-        select! {
-            _ = ctx.done() => {
-                break;
-            },
-            cmd_result = read_cmd(&mut conn) => {
-                match cmd_result {
-                    Ok(cmd_opt) => {
-                        match cmd_opt {
-                            Some(cmd) => {
-                                debug!("receive new command: {}", cmd);
-                                // TODO: execute Command
-                            }
-                            None => {
-                                // remote close connection
-                                break;
-                            }
-                        }
-
+        if send_msg_box.is_some() {
+            select! {
+                _ = ctx.done() => {
+                    break;
+                },
+                frames_cnt = send_message(&conn, send_msg_box.as_mut().unwrap()) => {
+                    if post_send_message(frames_cnt) {
+                        break;
                     }
-                    Err(err) => {
-                        error!("read data error {:?}", err);
+                },
+                message = read_message(&conn) => {
+                    if post_read_message(&conn, message).await {
+                        break;
+                    }
+                }
+            }
+        } else {
+            select! {
+                _ = ctx.done() => {
+                    break;
+                },
+                message = read_message(&conn) => {
+                    if post_read_message(&conn, message).await {
                         break;
                     }
                 }
@@ -95,7 +108,44 @@ async fn connection(ctx: RefContext, cfg: Arc<Config>, stream: TcpStream) {
     }
 }
 
-async fn read_cmd(conn: &mut Connection) -> anyhow::Result<Option<Command>> {
+pub enum CmdServerMessage {
+    PING,
+    PONG,
+    CMD(Command),
+    ERROR(String),
+}
+
+async fn send_message(
+    conn: &Connection,
+    send_msg_box: &mut mpsc::Receiver<Vec<Frame>>,
+) -> anyhow::Result<usize> {
+    if let Some(mut frames) = send_msg_box.recv().await {
+        trace!("通道中读到帧");
+        if !conn.writeable().await? {
+            return Ok(0);
+        }
+        trace!("连接可写");
+        conn.write_frame(&mut frames[..]).await?;
+        trace!("帧写入连接完成");
+        return Ok(frames.len());
+    }
+    Ok(0)
+}
+
+fn post_send_message(result: anyhow::Result<usize>) -> bool {
+    match result {
+        Ok(size) => {
+            trace!("成功发送数据帧数量: {}", size);
+            false
+        }
+        Err(err) => {
+            error!("发送数据帧错误: {:?}", err);
+            true
+        }
+    }
+}
+
+async fn read_message(conn: &Connection) -> anyhow::Result<Option<CmdServerMessage>> {
     let mut frames: Vec<Frame> = Vec::with_capacity(1);
     if !conn.readable().await? {
         return Ok(None);
@@ -103,18 +153,41 @@ async fn read_cmd(conn: &mut Connection) -> anyhow::Result<Option<Command>> {
     loop {
         match conn.read_frame().await? {
             Some(frame) => {
-                // 检查帧的合法信
+                // 检查帧合法性
                 if frame.header.version.to_byte() != CURRENT_VERSION {
                     return Err(anyhow::anyhow!("incorrect protocol version"));
                 }
-                if frame.header.kind != Kind::CMD {
-                    return Err(anyhow::anyhow!("not command frame"));
+                // 处理ping帧
+                match frame.header.kind {
+                    Kind::PING => {
+                        return Ok(Some(CmdServerMessage::PING));
+                    }
+                    Kind::PONG => {
+                        return Ok(Some(CmdServerMessage::PONG));
+                    }
+                    Kind::CMD => {
+                        if frame.is_last() {
+                            frames.push(frame);
+                            return Ok(Some(CmdServerMessage::CMD(parse_cmd(&frames))));
+                        }
+                        frames.push(frame);
+                    }
+                    Kind::ERROR => {
+                        if frame.is_last() {
+                            frames.push(frame);
+                            let error_msg = parse_error_message(&frames);
+                            return Ok(Some(CmdServerMessage::ERROR(error_msg)));
+                        }
+                        frames.push(frame);
+                    }
+                    _ => {
+                        warn!(
+                            "无法解析数据帧, frome={}, kind={:?}",
+                            conn.get_peer_addr(),
+                            frame.header.kind
+                        );
+                    }
                 }
-                if frame.is_last() {
-                    frames.push(frame);
-                    return Ok(Some(parse_cmd(&frames)));
-                }
-                frames.push(frame);
             }
             None => {
                 break;
@@ -124,10 +197,39 @@ async fn read_cmd(conn: &mut Connection) -> anyhow::Result<Option<Command>> {
     Ok(None)
 }
 
+async fn post_read_message(conn: &Connection, message: anyhow::Result<Option<CmdServerMessage>>) -> bool {
+    match message {
+        Ok(message_opt) => {
+            match message_opt {
+                Some(message) => {
+                    // 处理消息
+                    if let Err(err) = handle_cmd_server_message(&conn, message).await {
+                        error!("处理命令错误: {:?}", err);
+                        if let Err(reply_err) = try_reply_error(&conn, err).await {
+                            error!("回复客户端错误: {:?}", reply_err);
+                        }
+                    }
+                    false
+                }
+                None => {
+                    true
+                }
+            }
+        }
+        Err(err) => {
+            error!("读取命令错误: {:?}", err);
+            // 检查连接状态后返回错误
+            if let Err(reply_err) = try_reply_error(&conn, err).await {
+                error!("回复客户端错误: {:?}", reply_err);
+            }
+            true
+        }
+    }
+}
+
 fn parse_cmd(frames: &[Frame]) -> Command {
     let capacity: usize = frames.iter().map(|i| i.length.inner_value() as usize).sum();
-    let mut payload = Vec::with_capacity(capacity as usize);
-    // concat payload
+    let mut payload = BytesMut::with_capacity(capacity);
     for frame in frames {
         payload.extend_from_slice(&frame.payload);
     }
@@ -139,6 +241,61 @@ fn parse_cmd(frames: &[Frame]) -> Command {
     );
     let payload = &payload[..];
     payload.into()
+}
+
+async fn try_reply_error(conn: &Connection, error: anyhow::Error) -> anyhow::Result<()> {
+    if conn.is_open().await {
+        if let Ok(w) = conn.writeable().await {
+            if w {
+                let msg = format!("{}", error);
+                let payload = msg.as_bytes();
+                let mut frames = frame::build_frames(Kind::ERROR, payload)?;
+                conn.write_frame(&mut frames[..]).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_error_message(frames: &[Frame]) -> String {
+    let capacity: usize = frames.iter().map(|i| i.length.inner_value() as usize).sum();
+    let mut payload = BytesMut::with_capacity(capacity);
+    for frame in frames {
+        payload.extend_from_slice(&frame.payload);
+    }
+    String::from_utf8_lossy(&payload[..]).to_string()
+}
+
+async fn handle_cmd_server_message(
+    conn: &Connection,
+    msg: CmdServerMessage,
+) -> anyhow::Result<()> {
+    // debug!("receive new command: {}", cmd);
+    match msg {
+        CmdServerMessage::PING => {
+            debug!("收到PING帧, from={}", conn.get_peer_addr());
+            if conn.writeable().await? {
+                // 收到PING帧，回复PONG帧
+                let mut pong_frame = vec![Frame::new_pong()];
+                conn.write_frame(&mut pong_frame[..]).await?;
+            }
+        }
+        CmdServerMessage::PONG => {
+            debug!("收到PONG帧, from={}", conn.get_peer_addr());
+        }
+        CmdServerMessage::CMD(command) => {
+            info!("收到命令: from={}, cmd={}", conn.get_peer_addr(), command)
+            // TODO: 处理收到的CMD命令
+        }
+        CmdServerMessage::ERROR(err_msg) => {
+            warn!(
+                "收到错误响应: from={}, error={}",
+                conn.get_peer_addr(),
+                err_msg
+            );
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

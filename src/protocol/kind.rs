@@ -6,7 +6,7 @@ pub enum Kind {
     PING,
     PONG,
     CMD,
-    RAFT,
+    ERROR,
 }
 
 impl From<u8> for Kind {
@@ -15,7 +15,6 @@ impl From<u8> for Kind {
             0 => Self::PING,
             1 => Self::PONG,
             2 => Self::CMD,
-
             _ => Self::UNKNOWN,
         }
     }
@@ -31,7 +30,7 @@ impl Segment for Kind {
             Self::PING => 0b0,
             Self::PONG => 0b0000_0001,
             Self::CMD => 0b0000_0010,
-            Self::RAFT => 0b0000_0011,
+            Self::ERROR => 0b0000_1110,
             Self::UNKNOWN => 0b0000_1111,
         }
     }

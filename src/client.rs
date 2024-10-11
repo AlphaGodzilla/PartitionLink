@@ -1,9 +1,15 @@
-use log::{debug, error};
-use tokio::io::BufWriter;
-use tokio::{io::AsyncWriteExt, net::TcpSocket};
-
+use crate::cmd_server::connection;
 use crate::command::hello::HelloCmd;
 use crate::command::Command;
+use log::{debug, error};
+use protocol::kind::Kind;
+use std::time::Duration;
+use tokio::io::BufWriter;
+use tokio::{io::AsyncWriteExt, net::TcpSocket};
+use tokio::sync::mpsc::Sender;
+use tokio::time::Interval;
+use tokio_context::context::RefContext;
+use crate::protocol::frame::Frame;
 
 mod cluster;
 mod cmd_server;
@@ -23,26 +29,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:7111".parse().unwrap();
     let socket = TcpSocket::new_v4()?;
     let stream = socket.connect(addr).await?;
-    let mut write_stream = BufWriter::new(stream);
+    let (ctx, ctx_handler) = RefContext::new();
+    let (tx, rx) = tokio::sync::mpsc::channel(10);
+    let conn_handler = tokio::spawn(async move {
+        connection(ctx, stream, Some(rx)).await;
+    });
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    // 1. hello_cmd_test
+    // hello_cmd_test(&tx, 10).await?;
+    // 2. ping test
+    ping_test(&tx, 10, Duration::from_secs(1)).await?;
+
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    ctx_handler.cancel();
+    conn_handler.await?;
+    Ok(())
+}
+
+async fn hello_cmd_test(tx: &Sender<Vec<Frame>>, times: usize) -> anyhow::Result<()> {
     let mut valid = false;
-    for _ in 0..10000 {
-        if let Err(_) = write_stream.get_ref().writable().await {
-            error!("连接断开");
-            break;
-        }
+    for _ in 0..times {
         let send_command = Command::new(Box::new(HelloCmd { valid }), None);
         valid = !valid;
         debug!("编码Command为数据帧");
         let frames = send_command.encode_to_frames()?;
         debug!("帧数量: {}", frames.len());
-        let mut send_frame_cnt = 0;
-        for mut frame in frames {
-            debug!("发送帧: seq={}, data={:?}", send_frame_cnt, frame.encode());
-            write_stream.write(frame.encode()).await?;
-            send_frame_cnt += 1;
-        }
-        write_stream.flush().await?;
-        debug!("发送完成, 帧数={}", send_frame_cnt);
+        tx.send(frames).await?;
+    }
+    Ok(())
+}
+
+async fn ping_test(tx: &Sender<Vec<Frame>>, times: usize, interval: Duration) -> anyhow::Result<()> {
+    for _ in 0..times {
+        debug!("帧数量: 1");
+        let ping = Frame::new_ping();
+        tx.send(vec![ping]).await?;
+        tokio::time::sleep(interval).await;
     }
     Ok(())
 }
