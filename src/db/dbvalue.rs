@@ -1,10 +1,10 @@
 use std::fmt::Display;
 
-use crate::command::proto::{
-    proto_db_value, ProtoBooleanDbValue, ProtoBytesDbValue, ProtoDbValue, ProtoHashDbValue,
-    ProtoListDbValue, ProtoStringDbValue,
-};
 use ahash::AHashMap;
+use crate::proto::List as PList;
+use crate::proto::Hash as PHash;
+use crate::proto::DbValue as PDbValue;
+use crate::proto::db_value::Value as DbValueEnum;
 
 #[derive(Clone)]
 pub enum DBValue {
@@ -58,65 +58,50 @@ impl Display for DBValue {
     }
 }
 
-impl From<DBValue> for ProtoDbValue {
+impl From<DBValue> for PDbValue {
     fn from(value: DBValue) -> Self {
         value.to_protobuf()
     }
 }
 
 impl DBValue {
-    pub fn to_protobuf(&self) -> ProtoDbValue {
+    pub fn to_protobuf(&self) -> PDbValue {
         let value = match self {
-            DBValue::None => Some(proto_db_value::Value::NoneDbValue(false)),
-            DBValue::Boolean(v) => {
-                Some(proto_db_value::Value::BooleanDbValue(ProtoBooleanDbValue {
-                    value: v.clone(),
-                }))
-            }
-            DBValue::String(value) => {
-                Some(proto_db_value::Value::StringDbValue(ProtoStringDbValue {
-                    value: value.clone(),
-                }))
-            }
-            DBValue::Bytes(value) => Some(proto_db_value::Value::BytesDbValue(ProtoBytesDbValue {
-                value: value.clone(),
+            // DBValue::None => Some(proto_db_value::Value::NoneDbValue(false)),
+            DBValue::None => Some(DbValueEnum::None(false)),
+            DBValue::Boolean(v) => Some(DbValueEnum::Bool(v.clone())),
+            DBValue::String(v) => Some(DbValueEnum::String(v.clone())),
+            DBValue::Bytes(v) => Some(DbValueEnum::Bytes(v.clone())),
+            DBValue::List(values) => Some(DbValueEnum::List(PList{
+                value: values.iter().map(|x| x.to_protobuf()).collect()
             })),
-            DBValue::List(values) => {
-                let values = values.iter().map(|x| x.to_protobuf()).collect();
-                Some(proto_db_value::Value::ListDbValue(ProtoListDbValue {
-                    values,
-                }))
-            }
-            DBValue::Hash(values) => {
-                let values = values
+            DBValue::Hash(values) => Some(DbValueEnum::Hash(PHash {
+                values: values
                     .iter()
                     .map(|(k, v)| (k.clone(), v.to_protobuf()))
-                    .collect();
-                Some(proto_db_value::Value::HashDbValue(ProtoHashDbValue {
-                    values,
-                }))
-            }
+                    .collect()
+            }))
         };
-        ProtoDbValue { value }
+        PDbValue { value }
     }
 }
 
-impl From<ProtoDbValue> for DBValue {
-    fn from(value: ProtoDbValue) -> Self {
+impl From<PDbValue> for DBValue {
+    fn from(value: PDbValue) -> Self {
         if let None = value.value {
             return DBValue::None;
         }
         let value = value.value.unwrap();
         match value {
-            proto_db_value::Value::NoneDbValue(_) => DBValue::None,
-            proto_db_value::Value::BooleanDbValue(b) => DBValue::Boolean(b.value),
-            proto_db_value::Value::StringDbValue(s) => DBValue::String(s.value),
-            proto_db_value::Value::BytesDbValue(b) => DBValue::Bytes(b.value),
-            proto_db_value::Value::ListDbValue(l) => {
+            DbValueEnum::None(_) => DBValue::None,
+            DbValueEnum::Bool(b) => DBValue::Boolean(b.value),
+            DbValueEnum::String(s) => DBValue::String(s.value),
+            DbValueEnum::Bytes(b) => DBValue::Bytes(b.value),
+            DbValueEnum::List(l) => {
                 let l: Vec<DBValue> = l.values.into_iter().map(|x| x.into()).collect();
                 DBValue::List(l)
             }
-            proto_db_value::Value::HashDbValue(h) => {
+            DbValueEnum::Hash(h) => {
                 let h: AHashMap<String, DBValue> =
                     h.values.into_iter().map(|(k, v)| (k, v.into())).collect();
                 DBValue::Hash(h)

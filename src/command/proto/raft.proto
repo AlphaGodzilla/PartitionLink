@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package command.cmd;
-
-import "dbvalue.proto";
-
-message ProtoRaftCmd {
-  command.cmd.ProtoDBValue body = 1;
-}

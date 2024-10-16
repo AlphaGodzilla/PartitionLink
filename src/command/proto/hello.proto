@@ -1,7 +1,0 @@
-syntax = "proto3";
-
-package command.cmd;
-
-message ProtoHelloCmd {
-    bool valid = 1;
-}

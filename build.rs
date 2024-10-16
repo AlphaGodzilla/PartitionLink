@@ -3,7 +3,7 @@ extern crate prost_build;
 use std::{fs, path::Path};
 
 fn main() {
-    let proto_dir = "src/command/proto/";
+    let proto_dir = "src/";
     let mut proto_files: Vec<String> = Vec::new();
     let path = Path::new(proto_dir);
     walk_dir(&path, &mut proto_files);

@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package command;
+
+import "google/protobuf/timestamp.proto";
+import "proto/dbvalue.proto";
+
+message HelloCmd {
+    bool valid = 1;
+}
+
+message HashPutCmd {
+    string key = 1;
+    string member_key = 2;
+    dbvalue.DBValue member_value = 3;
+}
+
+message HashGetCmd {
+    string key = 1;
+    string member_key = 2;
+}
+
+message RaftCmd {
+    bytes body = 1;
+}
+
+
+message CommandMessage {
+    google.protobuf.Timestamp ts = 2;
+    oneof cmd {
+        HelloCmd hello = 3;
+        HashPutCmd hash_put = 4;
+        HashGetCmd hash_get = 5;
+        RaftCmd raft = 6;
+    }
+}

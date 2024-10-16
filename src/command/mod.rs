@@ -20,7 +20,6 @@ pub mod hash_get;
 pub mod hash_put;
 pub mod hello;
 pub mod invalid;
-pub mod proto;
 pub mod raft;
 pub mod register_info;
 
