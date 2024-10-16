@@ -1,6 +1,11 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::time::Duration;
+use uuid::Uuid;
 
+#[derive(Clone)]
 pub struct Config {
+    // 节点ID
+    pub node_id: u64,
     pub disc_multicast_group: String,
     pub disc_multicast_port: usize,
     pub disc_multicast_interval: Duration,
@@ -21,7 +26,8 @@ pub struct Config {
 impl Config {
     pub fn new() -> Self {
         let listen_port = option_env!("PL_LISTEN_PORT");
-        Config {
+        let mut cfg = Config {
+            node_id: 0,
             disc_multicast_group: String::from("224.0.0.1"),
             disc_multicast_port: 54123,
             disc_multicast_interval: Duration::from_secs(10),
@@ -35,7 +41,14 @@ impl Config {
                 ..Default::default()
             },
             raft_loop_interval: Duration::from_secs(1),
-        }
+        };
+        let node_id = Uuid::new_v4().to_string();
+        let mut hasher = DefaultHasher::new();
+        node_id.hash(&mut hasher);
+        let node_id = hasher.finish();
+        cfg.node_id = node_id;
+        cfg.raft_config.id = node_id;
+        cfg
     }
 }
 

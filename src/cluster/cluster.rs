@@ -1,29 +1,23 @@
 use crate::command::proto::ProtoCmd;
 use crate::command::raft::RaftCmd;
-use crate::command::{Command, CommandType, ProposalCommand};
+use crate::command::{Command, ProposalCommand};
 use crate::config::Config;
 use crate::connection::manager::ConnectionManager;
 use crate::db::dbvalue::DBValue;
-use crate::db::dbvalue::DBValue::String;
-use crate::node::{Node, NodeManager, ProposalAddNode, ShareNodeTable};
-use crate::postman::{AsAny, Channel, LetterMessage};
+use crate::node::{NodeManager, ProposalAddNode};
+use crate::postman::{AsAny, LetterMessage};
 use crate::runtime::Runtime;
 use anyhow::anyhow;
-use log::{error, info, warn};
+use log::{error, info, trace, warn};
 use protobuf::Message as PbMessage;
 use raft::prelude::{
-    ConfChange, ConfChangeType, ConfChangeV2, Entry, EntryType, Message, Snapshot,
+    ConfChange, ConfChangeType, Entry, EntryType, Message, Snapshot,
 };
 use raft::storage::MemStorage;
 use raft::{RawNode, StateRole};
-use std::any::Any;
 use std::collections::HashMap;
-use std::future::IntoFuture;
-use std::ptr::read;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::select;
-use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
@@ -370,6 +364,7 @@ pub fn start_cluster(
                     break;
                 },
                 _ = ticker.tick() => {
+                    trace!("cluster_node.poll");
                     if let Err(err) = cluster_node.poll(&app).await {
                         error!("Raft状态机执行异常, {:?}", err);
                     }

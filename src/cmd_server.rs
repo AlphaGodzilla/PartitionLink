@@ -1,11 +1,7 @@
-use std::{
-    cell::RefCell,
-    fmt::{Debug, Error},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use bytes::BytesMut;
-use log::{debug, error, info, log_enabled, trace, warn};
+use log::{debug, error, info, trace, warn};
 use tokio::{
     net::{TcpListener, TcpStream},
     select,
@@ -14,7 +10,6 @@ use tokio::{
 };
 use tokio_context::context::{Context, RefContext};
 
-use crate::command::proto::ProtoCmd;
 use crate::protocol::frame;
 use crate::protocol::{Segment, CURRENT_VERSION};
 use crate::runtime::Runtime;

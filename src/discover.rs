@@ -6,17 +6,13 @@ use crate::{
 };
 use log::{error, info, trace};
 use socket2::{Domain, Protocol, Socket, Type};
-use std::any::{Any, TypeId};
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::ptr::hash;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
 };
 use tokio::sync::mpsc::Receiver;
-use tokio::{net::UdpSocket, select, sync::mpsc, task::JoinHandle, time::interval};
+use tokio::{net::UdpSocket, select, task::JoinHandle, time::interval};
 use tokio_context::context::{Context, RefContext};
-use uuid::Uuid;
 
 pub struct Discover {
     cfg: Arc<Config>,
@@ -26,10 +22,7 @@ pub struct Discover {
 
 impl Discover {
     pub fn new(cfg: Arc<Config>) -> Discover {
-        let node_id = Uuid::new_v4().to_string();
-        let mut hasher = DefaultHasher::new();
-        node_id.hash(&mut hasher);
-        let node_id = hasher.finish();
+        let node_id = cfg.node_id;
         Discover {
             cfg,
             started: false,
@@ -73,7 +66,7 @@ impl Discover {
         let offline_node_msg = NodeMsg::new(self.node_id, "", self.cfg.listen_port, false);
         let offline_node_msg = serde_json::to_string(&offline_node_msg)?;
         tokio::spawn(async move {
-            info!("Multicast thread startup {}", &multicast_addr);
+            info!("discover multicast thread startup {}", &multicast_addr);
             let (mut ctx, _handler) = Context::with_parent(&ctx, None);
             let mut timeout_interval = interval(interval_duration);
             let online_message = online_node_msg.as_bytes();
@@ -81,7 +74,7 @@ impl Discover {
             loop {
                 tokio::select! {
                     _ = ctx.done() => {
-                        info!("Multicast thread shutdown");
+                        info!("discover multicast thread shutdown");
                         multicast_to_other_node(&socket_ref, multicast_addr.clone(), offline_message).await;
                         break;
                     }
@@ -100,13 +93,13 @@ impl Discover {
         let ctx = parent_ctx.clone();
         let app_copy = app.clone();
         tokio::spawn(async move {
-            info!("Listener thread startup");
+            info!("discover server thread startup");
             let (mut ctx, _handler) = Context::with_parent(&ctx, None);
             let mut buf = [0; 1024];
             loop {
                 tokio::select! {
                     _ = ctx.done() => {
-                        info!("Listener thread shutdown");
+                        info!("discover server thread shutdown");
                         break;
                     },
                     Some(node) = recv_from_other_node(socket_ref.clone(), my_id_copy, &mut buf) => {
@@ -174,19 +167,19 @@ pub fn start_discover(
     let mut discover = Discover::new(cfg.clone());
     discover.start(app.clone(), ctx.clone())?;
 
-    let cfg_copy = cfg.clone();
+    let cfg_copy = app.cfg.clone();
     let ctx_copy = ctx.clone();
     let app_copy = app.clone();
     let mut node_manager_copy = node_manager.clone();
     let discover_handler = tokio::spawn(async move {
-        info!("Discover thread startup");
+        info!("discover consumer thread startup");
         let (mut ctx, _handler) = Context::with_parent(&ctx_copy, None);
         let mut timeout_interval = interval(cfg_copy.disc_multicast_ttl_check_interval.clone());
         timeout_interval.tick().await;
         loop {
             select! {
                 _ = ctx.done() => {
-                    info!("Discover thread shutdown");
+                    info!("discover consumer thread shutdown");
                     break;
                 },
                 _ = on_ping_node(app_copy.as_ref(), &mut recv, &mut node_manager_copy) => {},

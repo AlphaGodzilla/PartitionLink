@@ -1,15 +1,13 @@
 use crate::config::Config;
 use crate::postman::{Channel, LetterMessage};
 use crate::until::now_ts;
-use ahash::{AHashMap, HashMap, HashMapExt, RandomState};
+use ahash::{AHashMap, HashMapExt};
 use async_trait::async_trait;
 use log::info;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::ptr::hash;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeMsg {

@@ -22,7 +22,7 @@ impl Runtime {
     pub fn new(cfg: Arc<Config>) -> Self {
         Runtime {
             postman: Postman::new(),
-            cfg,
+            cfg: cfg.clone(),
         }
     }
 

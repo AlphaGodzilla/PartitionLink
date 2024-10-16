@@ -9,8 +9,7 @@ use std::{
 
 use crate::command::Command;
 use command::{hash_get::HashMapGetCmd, hash_put::HashMapPutCmd};
-use config::Config;
-use db::{database::Database, dbvalue::DBValue};
+use db::dbvalue::DBValue;
 use log::{debug, error, info};
 use runtime::Runtime;
 use tokio::{select, signal, sync::mpsc, task::JoinHandle};

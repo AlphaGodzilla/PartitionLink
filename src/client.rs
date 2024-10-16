@@ -2,13 +2,10 @@ use crate::cmd_server::connection;
 use crate::command::hello::HelloCmd;
 use crate::command::Command;
 use crate::protocol::frame::Frame;
-use log::{debug, error};
-use protocol::kind::Kind;
+use log::debug;
 use std::time::Duration;
-use tokio::io::BufWriter;
 use tokio::sync::mpsc::Sender;
-use tokio::time::Interval;
-use tokio::{io::AsyncWriteExt, net::TcpSocket};
+use tokio::net::TcpSocket;
 use tokio_context::context::RefContext;
 
 mod cluster;
