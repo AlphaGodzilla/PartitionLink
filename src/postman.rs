@@ -31,9 +31,8 @@ impl<T: Any> AsAny for T {
 }
 
 pub struct Envelope<T> {
-    pub inner: T
+    pub inner: T,
 }
-
 
 pub struct Postman {
     channels: RwLock<AHashMap<Channel, Sender<Box<dyn LetterMessage>>>>,
