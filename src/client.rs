@@ -4,8 +4,8 @@ use crate::command::Command;
 use crate::protocol::frame::Frame;
 use log::debug;
 use std::time::Duration;
-use tokio::sync::mpsc::Sender;
 use tokio::net::TcpSocket;
+use tokio::sync::mpsc::Sender;
 use tokio_context::context::RefContext;
 
 mod cluster;

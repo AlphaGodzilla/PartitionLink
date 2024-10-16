@@ -10,9 +10,7 @@ use crate::runtime::Runtime;
 use anyhow::anyhow;
 use log::{error, info, trace, warn};
 use protobuf::Message as PbMessage;
-use raft::prelude::{
-    ConfChange, ConfChangeType, Entry, EntryType, Message, Snapshot,
-};
+use raft::prelude::{ConfChange, ConfChangeType, Entry, EntryType, Message, Snapshot};
 use raft::storage::MemStorage;
 use raft::{RawNode, StateRole};
 use std::collections::HashMap;
