@@ -119,7 +119,7 @@ impl Command {
         };
         let msg = CommandMessage {
             ts: Some(ts),
-            cmd: Some(self.inner.to_cmd()?)
+            cmd: Some(self.inner.to_cmd()?),
         };
         let mut buff = bytes::BytesMut::new();
         msg.encode(&mut buff)?;
@@ -155,18 +155,16 @@ impl From<&str> for Command {
 impl From<&[u8]> for Command {
     fn from(value: &[u8]) -> Self {
         match CommandMessage::decode(value) {
-            Ok(command_message) => {
-                match command_message.cmd {
-                    Some(cmd) => {
-                        if let Ok(cmd) = parse_proto_command(cmd) {
-                            Command::new(cmd, None)
-                        } else {
-                            Command::new(Box::new(InvalidCommand {}), None)
-                        }
+            Ok(command_message) => match command_message.cmd {
+                Some(cmd) => {
+                    if let Ok(cmd) = parse_proto_command(cmd) {
+                        Command::new(cmd, None)
+                    } else {
+                        Command::new(Box::new(InvalidCommand {}), None)
                     }
-                    None => Command::new(Box::new(InvalidCommand {}), None)
                 }
-            }
+                None => Command::new(Box::new(InvalidCommand {}), None),
+            },
             Err(_) => Command::new(Box::new(InvalidCommand {}), None),
         }
     }

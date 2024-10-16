@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use std::any::Any;
 use std::fmt::{Display, Formatter};
 
-
 use crate::proto::command_message::Cmd;
 use crate::proto::RaftCmd;
 use crate::runtime::Runtime;
@@ -51,7 +50,7 @@ impl TryFrom<Cmd> for RaftCmd {
     fn try_from(value: Cmd) -> Result<Self, Self::Error> {
         if let Cmd::Raft(cmd) = value {
             Ok(cmd)
-        }else {
+        } else {
             Err(anyhow::anyhow!("invalid command"))
         }
     }

@@ -1,14 +1,12 @@
-use std::any::Any;
-use std::fmt::Display;
-use async_trait::async_trait;
-use prost::Message;
-use crate::runtime::Runtime;
+use super::ExecutableCommand;
 use crate::db::{database::Database, dbvalue::DBValue};
 use crate::proto::command_message::Cmd;
 use crate::proto::HashGetCmd;
-use super::{
-    ExecutableCommand,
-};
+use crate::runtime::Runtime;
+use async_trait::async_trait;
+use prost::Message;
+use std::any::Any;
+use std::fmt::Display;
 
 // #[derive(Clone)]
 // pub struct HashGetCmd {
@@ -22,22 +20,24 @@ impl ExecutableCommand for HashGetCmd {
         super::CommandType::READ
     }
 
-    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
+    async fn execute(
+        &self,
+        app: Option<&Runtime>,
+        db: Option<&mut Database>,
+    ) -> anyhow::Result<Option<DBValue>> {
         if let Some(db) = db {
             if let Some(value) = db.get(&self.key) {
                 return match value {
-                    DBValue::Hash(hash) => {
-                        Ok(hash.get(&self.member_key).map(|x| x.clone()))
-                    }
+                    DBValue::Hash(hash) => Ok(hash.get(&self.member_key).map(|x| x.clone())),
                     _ => Ok(None),
-                }
+                };
             }
         }
         Ok(None)
     }
 
     fn to_cmd(&self) -> anyhow::Result<Cmd> {
-       Ok(Cmd::HashGet(self.clone()))
+        Ok(Cmd::HashGet(self.clone()))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -57,7 +57,7 @@ impl TryFrom<Cmd> for HashGetCmd {
     fn try_from(value: Cmd) -> Result<Self, Self::Error> {
         if let Cmd::HashGet(hash) = value {
             Ok(hash)
-        }else {
+        } else {
             Err(anyhow::Error::msg("Invalid command"))
         }
     }

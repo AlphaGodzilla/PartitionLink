@@ -4,6 +4,7 @@ use crate::connection::manager::ConnectionManager;
 use crate::db::dbvalue::DBValue;
 use crate::node::{NodeManager, ProposalAddNode};
 use crate::postman::{AsAny, LetterMessage};
+use crate::proto::RaftCmd;
 use crate::runtime::Runtime;
 use anyhow::anyhow;
 use log::{error, info, trace, warn};
@@ -19,7 +20,6 @@ use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tokio_context::context::{Context, RefContext};
-use crate::proto::RaftCmd;
 
 pub struct ClusterNode {
     conn_manager: ConnectionManager,
@@ -88,9 +88,7 @@ impl ClusterNode {
                                     match message_bytes {
                                         Ok(bytes) => {
                                             let command = Command::new(
-                                                Box::new(RaftCmd {
-                                                    body: bytes,
-                                                }),
+                                                Box::new(RaftCmd { body: bytes }),
                                                 None,
                                             );
                                             match command.encode_to_frames() {

@@ -17,10 +17,10 @@ mod db;
 mod discover;
 mod node;
 mod postman;
+mod proto;
 mod protocol;
 mod runtime;
 mod until;
-mod proto;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

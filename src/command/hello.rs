@@ -1,6 +1,4 @@
-use super::{
-    CommandType, ExecutableCommand,
-};
+use super::{CommandType, ExecutableCommand};
 use crate::db::{database::Database, dbvalue::DBValue};
 use crate::proto::command_message::Cmd;
 use crate::proto::HelloCmd;
@@ -49,7 +47,7 @@ impl TryFrom<Cmd> for HelloCmd {
     fn try_from(value: Cmd) -> Result<Self, Self::Error> {
         if let Cmd::Hello(hello_cmd) = value {
             Ok(hello_cmd)
-        }else {
+        } else {
             Err(anyhow::anyhow!("invalid command"))
         }
     }

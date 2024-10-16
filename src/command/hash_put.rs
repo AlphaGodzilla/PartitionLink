@@ -60,7 +60,6 @@ impl ExecutableCommand for HashPutCmd {
         Ok(Cmd::HashPut(self.clone()))
     }
 
-
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -70,7 +69,7 @@ impl Display for HashPutCmd {
         if let Some(member_value) = &self.member_value {
             let value: DBValue = member_value.clone().into();
             write!(f, "HashPut {} {}", &self.key, &value)
-        }else {
+        } else {
             write!(f, "HashPut {} None", &self.key)
         }
     }
@@ -82,7 +81,7 @@ impl TryFrom<Cmd> for HashPutCmd {
     fn try_from(value: Cmd) -> Result<Self, Self::Error> {
         if let Cmd::HashPut(hash) = value {
             Ok(hash)
-        }else {
+        } else {
             Err(anyhow::anyhow!("invalid command"))
         }
     }

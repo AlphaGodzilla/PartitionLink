@@ -1,10 +1,10 @@
 use std::fmt::Display;
 
-use ahash::AHashMap;
-use crate::proto::List as PList;
-use crate::proto::Hash as PHash;
-use crate::proto::DbValue as PDbValue;
 use crate::proto::db_value::Value as DbValueEnum;
+use crate::proto::DbValue as PDbValue;
+use crate::proto::Hash as PHash;
+use crate::proto::List as PList;
+use ahash::AHashMap;
 
 #[derive(Clone)]
 pub enum DBValue {
@@ -72,15 +72,15 @@ impl DBValue {
             DBValue::Boolean(v) => Some(DbValueEnum::Bool(v.clone())),
             DBValue::String(v) => Some(DbValueEnum::String(v.clone())),
             DBValue::Bytes(v) => Some(DbValueEnum::Bytes(v.clone())),
-            DBValue::List(values) => Some(DbValueEnum::List(PList{
-                value: values.iter().map(|x| x.to_protobuf()).collect()
+            DBValue::List(values) => Some(DbValueEnum::List(PList {
+                value: values.iter().map(|x| x.to_protobuf()).collect(),
             })),
             DBValue::Hash(values) => Some(DbValueEnum::Hash(PHash {
                 values: values
                     .iter()
                     .map(|(k, v)| (k.clone(), v.to_protobuf()))
-                    .collect()
-            }))
+                    .collect(),
+            })),
         };
         PDbValue { value }
     }

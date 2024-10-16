@@ -8,12 +8,12 @@ use std::{
 };
 
 use crate::command::Command;
+use crate::proto::{HashGetCmd, HashPutCmd};
 use db::dbvalue::DBValue;
 use log::{debug, error, info};
 use runtime::Runtime;
 use tokio::{select, signal, sync::mpsc, task::JoinHandle};
 use tokio_context::context::RefContext;
-use crate::proto::{HashGetCmd, HashPutCmd};
 
 mod cluster;
 mod cmd_server;
@@ -24,10 +24,10 @@ mod db;
 mod discover;
 mod node;
 mod postman;
+mod proto;
 mod protocol;
 mod runtime;
 mod until;
-mod proto;
 
 fn main() {
     env_logger::init();
@@ -80,10 +80,13 @@ pub fn execute_cmd(
             let cmd = Box::new(HashPutCmd {
                 key: String::from("UserConnectStateMap"),
                 member_key: String::from("jason"),
-                member_value: Some(DBValue::String(String::from(format!(
-                    "online: {}",
-                    adder_copy.fetch_add(1, Ordering::SeqCst)
-                ))).into()),
+                member_value: Some(
+                    DBValue::String(String::from(format!(
+                        "online: {}",
+                        adder_copy.fetch_add(1, Ordering::SeqCst)
+                    )))
+                    .into(),
+                ),
             });
             let command = Box::new(Command::new(cmd, Some(dbvalue_tx.clone())));
             if let Err(err) = app_ref.postman.send(command).await {
