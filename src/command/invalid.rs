@@ -1,5 +1,7 @@
+use std::any::Any;
 use std::fmt::Display;
-
+use async_trait::async_trait;
+use crate::runtime::Runtime;
 use crate::db::{database::Database, dbvalue::DBValue};
 
 use super::{proto::ProtoCmd, CommandType, ExecutableCommand};
@@ -7,12 +9,13 @@ use super::{proto::ProtoCmd, CommandType, ExecutableCommand};
 #[derive(Clone)]
 pub struct InvalidCommand {}
 
+#[async_trait]
 impl ExecutableCommand for InvalidCommand {
     fn cmd_type(&self) -> CommandType {
         CommandType::READ
     }
 
-    fn execute(&self, db: &mut Database) -> anyhow::Result<Option<DBValue>> {
+    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
         Ok(None)
     }
 
@@ -20,8 +23,11 @@ impl ExecutableCommand for InvalidCommand {
         Err(anyhow::anyhow!("InvalidCommand cannot encode"))
     }
 
-    fn cmd_id(&self) -> i32 {
-        ProtoCmd::Unknown as i32
+    fn cmd_id(&self) -> ProtoCmd {
+        ProtoCmd::Unknown
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

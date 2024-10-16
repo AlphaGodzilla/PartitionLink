@@ -1,7 +1,7 @@
 use jni::objects::{JClass, JString};
 use jni::sys::JNIEnv;
-use PartitionLink::db::Database;
-// use PartitionLink::db::Database;
+use crate::db::Database;
+// use crate::db::Database;
 
 #[no_mangle]
 pub extern "C" fn Java_io_github_alphagodzilla_partitionlink_AsyncDatabase_newDB(mut env: JNIEnv, _class: JClass) -> jlong {

@@ -22,18 +22,22 @@ impl ConnectionManager {
         }
     }
 
+    pub fn get_node_manager_ref(&self) -> &ShareNodeTable {
+        &self.node_table
+    }
+
     pub async fn all_conn(&self) -> anyhow::Result<Vec<Arc<NodeConnection>>> {
         let nodes = self.node_table.get_other_nodes().await;
         log::trace!("find node table's other node count {}", nodes.len());
         let mut all_conn: Vec<Arc<NodeConnection>> = Vec::with_capacity(nodes.len());
         for node in nodes {
-            let conn = self.get_conn(node.as_ref()).await?;
+            let conn = self.get(node.as_ref()).await?;
             all_conn.push(conn.clone());
         }
         Ok(all_conn)
     }
 
-    pub async fn first_conn(&self) -> anyhow::Result<Option<Arc<NodeConnection>>> {
+    async fn first_conn(&self) -> anyhow::Result<Option<Arc<NodeConnection>>> {
         let nodes = self.node_table.get_other_nodes().await;
         if nodes.len() <= 0 {
             return Ok(None);
@@ -60,7 +64,7 @@ impl ConnectionManager {
         }
     }
 
-    pub async fn get_conn(&self, node: &Node) -> anyhow::Result<Arc<NodeConnection>> {
+    pub async fn get(&self, node: &Node) -> anyhow::Result<Arc<NodeConnection>> {
         let mut connections = self.connections.lock().await;
         match connections.get(node) {
             Some(conn) => {
@@ -70,15 +74,23 @@ impl ConnectionManager {
                 let new_conn = new_connection(node).await?;
                 connections.insert(node.clone(), Arc::new(new_conn));
                 let conn = connections.get(node).map(|x| x.clone()).unwrap();
-                return Ok(conn.clone());
+                Ok(conn.clone())
             }
             None => {
                 let new_conn = new_connection(node).await?;
                 connections.insert(node.clone(), Arc::new(new_conn));
                 let conn = connections.get(node).map(|x| x.clone()).unwrap();
-                return Ok(conn.clone());
+                Ok(conn.clone())
             }
-        };
+        }
+    }
+
+    pub async fn get_by_id(&self, node_id: &u64) -> anyhow::Result<Option<Arc<NodeConnection>>> {
+        if let Some(node) = self.node_table.get_other_node(node_id).await {
+            let conn = self.get(node.as_ref()).await?;
+            return Ok(Some(conn));
+        }
+        Ok(None)
     }
 }
 

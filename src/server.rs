@@ -27,6 +27,7 @@ mod node;
 mod protocol;
 mod runtime;
 mod until;
+mod postman;
 
 fn main() {
     env_logger::init();
@@ -36,38 +37,33 @@ fn main() {
         .build()
         .unwrap();
 
-    // make database channel size of 32
-    let (tx, rx) = mpsc::channel(32);
-    let db = Database::new(tx.clone());
-
     let send_cmd = option_env!("LOCAL_CMD_MODE");
     if send_cmd.is_some() {
         info!("LOCAL_CMD_MODE set, running server and execute command mode");
-        interval_execute_cmd(&runtime, db, tx.clone(), rx);
+        interval_execute_cmd(&runtime);
     } else {
         info!("LOCAL_CMD_MODE unset, running only server mode");
         // 阻塞当前线程
-        runtime.block_on(async move { start_runtime(db, rx).await.unwrap() });
+        let app = Arc::new(Runtime::new_with_default_config());
+        let app_ref= app.clone();
+        runtime.block_on(async move { start_runtime(app_ref).await.unwrap() });
     }
 }
 
-pub fn interval_execute_cmd(
-    runtime: &tokio::runtime::Runtime,
-    db: Database,
-    database_send: mpsc::Sender<Command>,
-    database_recv: mpsc::Receiver<Command>,
-) {
+pub fn interval_execute_cmd(runtime: &tokio::runtime::Runtime) {
+    let app = Arc::new(Runtime::new_with_default_config());
+    let app_ref = app.clone();
     // start server
     let server_handler =
-        runtime.spawn(async move { start_runtime(db, database_recv).await.unwrap() });
+        runtime.spawn(async move { start_runtime(app_ref).await.unwrap() });
 
     // try execute cmd
-    execute_cmd(runtime, database_send, &server_handler);
+    execute_cmd(runtime, app.clone(), &server_handler);
 }
 
 pub fn execute_cmd(
     runtime: &tokio::runtime::Runtime,
-    database_send: mpsc::Sender<Command>,
+    app: Arc<Runtime>,
     server_handler: &JoinHandle<()>,
 ) {
     let adder = Arc::new(AtomicUsize::new(0));
@@ -78,10 +74,8 @@ pub fn execute_cmd(
             break;
         }
 
-        // execute cmd
-        let tx = database_send.clone();
-
         let adder_copy = adder.clone();
+        let app_ref = app.clone();
         runtime.spawn(async move {
             let (dbvalue_tx, mut dbvalue_rx) = mpsc::channel(1);
             let cmd = Box::new(HashMapPutCmd {
@@ -92,7 +86,8 @@ pub fn execute_cmd(
                     adder_copy.fetch_add(1, Ordering::SeqCst)
                 ))),
             });
-            if let Err(err) = tx.send(Command::new(cmd, Some(dbvalue_tx.clone()))).await {
+            let command = Box::new(Command::new(cmd, Some(dbvalue_tx.clone())));
+            if let Err(err) = app_ref.postman.send(command).await {
                 error!("Send command error {:?}", err);
             }
             if let Some(res) = dbvalue_rx.recv().await {
@@ -113,7 +108,8 @@ pub fn execute_cmd(
                 key: String::from("UserConnectStateMap"),
                 member_key: String::from("jason"),
             });
-            if let Err(err) = tx.send(Command::new(cmd, Some(dbvalue_tx.clone()))).await {
+            let command = Box::new(Command::new(cmd, Some(dbvalue_tx.clone())));
+            if let Err(err) = app_ref.postman.send(command).await {
                 error!("Send command error {:?}", err);
             }
             if let Some(res) = dbvalue_rx.recv().await {
@@ -134,26 +130,18 @@ pub fn execute_cmd(
     }
 }
 
-pub async fn start_runtime(
-    database: Database,
-    database_recv: mpsc::Receiver<Command>,
-) -> anyhow::Result<()> {
-    let cfg = Arc::new(Config::default());
-
-    let rt = Runtime::new();
-
+pub async fn start_runtime(app: Arc<Runtime>) -> anyhow::Result<()> {
     let (ctx, ctx_handler) = RefContext::new();
 
-    let (discover_handler, command_handler, db_channel_handler) =
-        rt.start(&ctx, cfg.clone(), database, database_recv)?;
+    let mut handlers = Runtime::start(app, ctx).await?;
 
     shutdown_signal().await;
 
     ctx_handler.cancel();
 
-    discover_handler.await?;
-    command_handler.await?;
-    db_channel_handler.await?;
+    for handler in handlers.drain(..) {
+        handler.await?;
+    }
     Ok(())
 }
 

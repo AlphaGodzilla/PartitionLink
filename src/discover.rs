@@ -2,42 +2,49 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
 };
-
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::ptr::hash;
 use log::{error, info, trace};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::{net::UdpSocket, select, sync::mpsc, task::JoinHandle, time::interval};
+use tokio::sync::mpsc::Receiver;
 use tokio_context::context::{Context, RefContext};
 use uuid::Uuid;
-
+use crate::postman::PostMessage;
 use crate::{
     config::Config,
     node::{Node, NodeManager, NodeMsg, ShareNodeTable},
 };
+use crate::runtime::Runtime;
 
 pub struct Discover {
     cfg: Arc<Config>,
     started: bool,
-    pub node_id: String,
+    pub node_id: u64,
 }
 
 impl Discover {
     pub fn new(cfg: Arc<Config>) -> Discover {
         let node_id = Uuid::new_v4().to_string();
+        let mut hasher = DefaultHasher::new();
+        node_id.hash(&mut hasher);
+        let node_id = hasher.finish();
         Discover {
             cfg,
             started: false,
-            node_id: String::from(&node_id),
+            node_id,
         }
     }
 
     pub fn start(
         &mut self,
-        parent_ctx: &RefContext,
-    ) -> Result<Option<tokio::sync::mpsc::Receiver<Node>>, anyhow::Error> {
+        app: Arc<Runtime>,
+        parent_ctx: RefContext,
+    ) -> anyhow::Result<()> {
         let cfg = self.cfg.clone();
         if self.started {
             // 已经启动
-            return Ok(None);
+            return Ok(());
         }
         let multicast_addr = format!("{}:{}", cfg.disc_multicast_group, cfg.disc_multicast_port);
         let multicast_addr = multicast_addr.parse::<SocketAddr>()?;
@@ -62,12 +69,11 @@ impl Discover {
 
         // 发送组播消息的任务
         let socket_ref = socket.clone();
-        let my_id_copy = self.node_id.clone();
         let interval_duration = cfg.disc_multicast_interval.clone();
         let ctx = parent_ctx.clone();
-        let online_node_msg = NodeMsg::new(&my_id_copy, "", self.cfg.listen_port, true);
+        let online_node_msg = NodeMsg::new(self.node_id, "", self.cfg.listen_port, true);
         let online_node_msg = serde_json::to_string(&online_node_msg)?;
-        let offline_node_msg = NodeMsg::new(&my_id_copy, "", self.cfg.listen_port, false);
+        let offline_node_msg = NodeMsg::new(self.node_id, "", self.cfg.listen_port, false);
         let offline_node_msg = serde_json::to_string(&offline_node_msg)?;
         tokio::spawn(async move {
             info!("Multicast thread startup {}", &multicast_addr);
@@ -79,11 +85,11 @@ impl Discover {
                 tokio::select! {
                     _ = ctx.done() => {
                         info!("Multicast thread shutdown");
-                        mutilcast_to_other_node(&socket_ref, multicast_addr.clone(), offline_message).await;
+                        multicast_to_other_node(&socket_ref, multicast_addr.clone(), offline_message).await;
                         break;
                     }
                     _ = timeout_interval.tick() => {
-                        mutilcast_to_other_node(&socket_ref, multicast_addr.clone(), online_message).await;
+                        multicast_to_other_node(&socket_ref, multicast_addr.clone(), online_message).await;
                     }
                 }
             }
@@ -92,9 +98,10 @@ impl Discover {
         // 接受组播消息的任务
         let socket_ref = socket.clone();
         let my_id_copy = self.node_id.clone();
-        info!("This Node ID: {}", &my_id_copy);
-        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        info!("This Node ID: {}", my_id_copy);
+
         let ctx = parent_ctx.clone();
+        let app_copy = app.clone();
         tokio::spawn(async move {
             info!("Listener thread startup");
             let (mut ctx, _handler) = Context::with_parent(&ctx, None);
@@ -105,25 +112,23 @@ impl Discover {
                         info!("Listener thread shutdown");
                         break;
                     },
-                    Some(node) = recv_from_other_node(socket_ref.clone(), &my_id_copy, &mut buf) => {
+                    Some(node) = recv_from_other_node(socket_ref.clone(), my_id_copy, &mut buf) => {
                         if !node.is_self {
                             trace!("From other node {:?}", &node);
                         }
-                        if let Err(err) = tx.send(node).await {
+                        if let Err(err) = app_copy.postman.send(Box::new(node)).await {
                             error!("send node message error {:?}", err);
                         }
                     }
                 }
             }
         });
-
         self.started = true;
-
-        Ok(Some(rx))
+        Ok(())
     }
 }
 
-async fn mutilcast_to_other_node(
+async fn multicast_to_other_node(
     socket_ref: &UdpSocket,
     multicast_addr: SocketAddr,
     message: &[u8],
@@ -137,7 +142,7 @@ async fn mutilcast_to_other_node(
 
 async fn recv_from_other_node(
     socket_ref: Arc<UdpSocket>,
-    my_id_copy: &str,
+    my_id: u64,
     buf: &mut [u8],
 ) -> Option<Node> {
     let (len, addr) = socket_ref.recv_from(buf).await.expect("Failed to receive");
@@ -146,10 +151,10 @@ async fn recv_from_other_node(
     trace!("recv node ping msg {}", &msg);
     match serde_json::from_str::<NodeMsg>(&msg) {
         Ok(msg) => {
-            let is_self = msg.id == my_id_copy;
+            let is_self = msg.id == my_id;
             Some(Node::new(
                 &addr.ip().to_string(),
-                &msg.id,
+                msg.id,
                 msg.port,
                 is_self,
                 msg.online,
@@ -163,15 +168,18 @@ async fn recv_from_other_node(
 }
 
 pub fn start_discover(
-    ctx: &RefContext,
+    app: Arc<Runtime>,
+    ctx: RefContext,
     cfg: Arc<Config>,
     node_manager: ShareNodeTable,
+    mut recv: Receiver<Box<dyn PostMessage>>,
 ) -> anyhow::Result<JoinHandle<()>> {
     let mut discover = Discover::new(cfg.clone());
-    let mut recv = discover.start(ctx)?;
+    discover.start(app.clone(), ctx.clone())?;
 
     let cfg_copy = cfg.clone();
     let ctx_copy = ctx.clone();
+    let app_copy = app.clone();
     let mut node_manager_copy = node_manager.clone();
     let discover_handler = tokio::spawn(async move {
         info!("Discover thread startup");
@@ -184,7 +192,7 @@ pub fn start_discover(
                     info!("Discover thread shutdown");
                     break;
                 },
-                _ = on_ping_node(&mut recv, &mut node_manager_copy) => {},
+                _ = on_ping_node(app_copy.as_ref(), &mut recv, &mut node_manager_copy) => {},
                 _ = timeout_interval.tick() => {
                     if let Ok(prune_cnt) = node_manager_copy.prune().await {
                         if prune_cnt > 0 {
@@ -199,13 +207,14 @@ pub fn start_discover(
 }
 
 async fn on_ping_node(
-    rev: &mut Option<mpsc::Receiver<Node>>,
+    app: &Runtime,
+    recv: &mut Receiver<Box<dyn PostMessage>>,
     node_manager: &mut ShareNodeTable,
 ) -> anyhow::Result<()> {
-    if let Some(recv) = rev {
-        if let Some(msg) = recv.recv().await {
-            trace!("Recv node ping {:?}", &msg);
-            node_manager.ping(msg).await?;
+    if let Some(msg) = recv.recv().await {
+        if let Some(node) = msg.as_any().downcast_ref::<Node>() {
+            trace!("Recv node ping {:?}", node);
+            node_manager.ping(node.clone()).await?;
         }
     }
     Ok(())

@@ -1,7 +1,8 @@
+use std::any::Any;
 use std::fmt::Display;
-
+use async_trait::async_trait;
 use prost::Message;
-
+use crate::runtime::Runtime;
 use crate::db::{database::Database, dbvalue::DBValue};
 
 use super::{
@@ -14,12 +15,13 @@ pub struct HelloCmd {
     pub valid: bool,
 }
 
+#[async_trait]
 impl ExecutableCommand for HelloCmd {
     fn cmd_type(&self) -> CommandType {
         CommandType::READ
     }
 
-    fn execute(&self, db: &mut Database) -> anyhow::Result<Option<DBValue>> {
+    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
         Ok(None)
     }
 
@@ -30,8 +32,11 @@ impl ExecutableCommand for HelloCmd {
         Ok(buff.freeze())
     }
 
-    fn cmd_id(&self) -> i32 {
-        ProtoCmd::HelloCmd as i32
+    fn cmd_id(&self) -> ProtoCmd {
+        ProtoCmd::HelloCmd
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

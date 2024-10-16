@@ -1,15 +1,15 @@
 use crate::cmd_server::connection;
 use crate::command::hello::HelloCmd;
 use crate::command::Command;
+use crate::protocol::frame::Frame;
 use log::{debug, error};
 use protocol::kind::Kind;
 use std::time::Duration;
 use tokio::io::BufWriter;
-use tokio::{io::AsyncWriteExt, net::TcpSocket};
 use tokio::sync::mpsc::Sender;
 use tokio::time::Interval;
+use tokio::{io::AsyncWriteExt, net::TcpSocket};
 use tokio_context::context::RefContext;
-use crate::protocol::frame::Frame;
 
 mod cluster;
 mod cmd_server;
@@ -22,6 +22,7 @@ mod node;
 mod protocol;
 mod runtime;
 mod until;
+mod postman;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (ctx, ctx_handler) = RefContext::new();
     let (tx, rx) = tokio::sync::mpsc::channel(10);
     let conn_handler = tokio::spawn(async move {
-        connection(ctx, stream, Some(rx)).await;
+        connection(None, ctx, stream, Some(rx)).await;
     });
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -40,7 +41,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // hello_cmd_test(&tx, 10).await?;
     // 2. ping test
     ping_test(&tx, 10, Duration::from_secs(1)).await?;
-
 
     tokio::time::sleep(Duration::from_secs(1)).await;
     ctx_handler.cancel();
@@ -61,7 +61,11 @@ async fn hello_cmd_test(tx: &Sender<Vec<Frame>>, times: usize) -> anyhow::Result
     Ok(())
 }
 
-async fn ping_test(tx: &Sender<Vec<Frame>>, times: usize, interval: Duration) -> anyhow::Result<()> {
+async fn ping_test(
+    tx: &Sender<Vec<Frame>>,
+    times: usize,
+    interval: Duration,
+) -> anyhow::Result<()> {
     for _ in 0..times {
         debug!("帧数量: 1");
         let ping = Frame::new_ping();

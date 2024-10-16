@@ -1,14 +1,12 @@
 use std::fmt::Display;
 
-use crate::command::proto::{
-    proto_db_value, ProtoBytesDbValue, ProtoDbValue, ProtoHashDbValue, ProtoListDbValue,
-    ProtoStringDbValue,
-};
+use crate::command::proto::{proto_db_value, ProtoBooleanDbValue, ProtoBytesDbValue, ProtoDbValue, ProtoHashDbValue, ProtoListDbValue, ProtoStringDbValue};
 use ahash::AHashMap;
 
 #[derive(Clone)]
 pub enum DBValue {
     None,
+    Boolean(bool),
     String(String),
     Bytes(Vec<u8>),
     List(Vec<DBValue>),
@@ -20,6 +18,9 @@ impl Display for DBValue {
         match self {
             Self::None => {
                 write!(f, "DBValue::None")?;
+            }
+            Self::Boolean(v) => {
+                write!(f, "DBValue::{}", &format!("Boolean({})", &v))?;
             }
             Self::String(v) => {
                 write!(f, "DBValue::{}", &format!("String({})", &v))?;
@@ -38,11 +39,25 @@ impl Display for DBValue {
                 }
                 write!(f, ")")?;
             }
-            Self::Hash(_) => {
-                write!(f, "DBValue::{}", "Hash")?;
+            Self::Hash(h) => {
+                write!(f, "DBValue::Hash(\n", )?;
+                let mut iter = h.iter();
+                if let Some((k,v)) = iter.next() {
+                    write!(f, "  {} = {}", k, v)?;
+                    for item in iter {
+                        write!(f, ",\n{}={}", k,v)?;
+                    }
+                }
+                write!(f, ")")?;
             }
         };
         Ok(())
+    }
+}
+
+impl From<DBValue> for ProtoDbValue {
+    fn from(value: DBValue) -> Self {
+        value.to_protobuf()
     }
 }
 
@@ -50,6 +65,11 @@ impl DBValue {
     pub fn to_protobuf(&self) -> ProtoDbValue {
         let value = match self {
             DBValue::None => Some(proto_db_value::Value::NoneDbValue(false)),
+            DBValue::Boolean(v) => {
+                Some(proto_db_value::Value::BooleanDbValue(ProtoBooleanDbValue {
+                    value: v.clone()
+                }))
+            },
             DBValue::String(value) => {
                 Some(proto_db_value::Value::StringDbValue(ProtoStringDbValue {
                     value: value.clone(),
@@ -86,6 +106,7 @@ impl From<ProtoDbValue> for DBValue {
         let value = value.value.unwrap();
         match value {
             proto_db_value::Value::NoneDbValue(_) => DBValue::None,
+            proto_db_value::Value::BooleanDbValue(b) => DBValue::Boolean(b.value),
             proto_db_value::Value::StringDbValue(s) => DBValue::String(s.value),
             proto_db_value::Value::BytesDbValue(b) => DBValue::Bytes(b.value),
             proto_db_value::Value::ListDbValue(l) => {

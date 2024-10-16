@@ -1,18 +1,20 @@
-use log::trace;
-use std::fmt::Display;
-
+use crate::command::proto::ProtoCmd;
+use crate::db::{database::Database, dbvalue::DBValue};
+use crate::postman::{Channel, PostMessage};
+use crate::protocol::frame::{self, Frame};
+use crate::protocol::kind::Kind;
+use crate::runtime::Runtime;
+use crate::until;
+use async_trait::async_trait;
 use hello::HelloCmd;
 use invalid::InvalidCommand;
 use prost::Message;
 use prost_types::Timestamp;
 use proto::ProtoCommand;
 use register_info::parse_proto_command;
+use std::any::Any;
+use std::fmt::Display;
 use tokio::sync::mpsc;
-
-use crate::db::{database::Database, dbvalue::DBValue};
-use crate::protocol::frame::{self, Frame};
-use crate::protocol::kind::Kind;
-use crate::until;
 
 pub mod hash_get;
 pub mod hash_put;
@@ -22,24 +24,43 @@ pub mod proto;
 pub mod raft;
 pub mod register_info;
 
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum CommandType {
     READ,
     WRITE,
 }
 
 // 所有命令必须实现该trait
+#[async_trait]
 pub trait ExecutableCommand: Display + Send + Sync {
     // 命令类型，分为读类型和写类型
     fn cmd_type(&self) -> CommandType;
 
     // 执行命令
-    fn execute(&self, db: &mut Database) -> anyhow::Result<Option<DBValue>>;
+    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>>;
 
     // 编码为字节数组
     fn encode(&self) -> anyhow::Result<bytes::Bytes>;
 
     // 编码的命令ID
-    fn cmd_id(&self) -> i32;
+    fn cmd_id(&self) -> ProtoCmd;
+    fn as_any(&self) -> &dyn Any;
+
+    fn is_raft_cmd(&self) -> bool {
+        self.cmd_id() == ProtoCmd::RaftCmd
+    }
+
+    fn is_write_type(&self) -> bool {
+        self.cmd_type() == CommandType::WRITE
+    }
+
+    fn is_read_type(&self) -> bool {
+        self.cmd_type() == CommandType::READ
+    }
+
+    fn is_valid(&self) -> bool {
+        self.cmd_id() != ProtoCmd::Unknown
+    }
 }
 
 pub struct Command {
@@ -60,8 +81,8 @@ impl Command {
         }
     }
 
-    pub fn execute(&self, db: &mut Database) -> anyhow::Result<Option<DBValue>> {
-        self.inner.execute(db)
+    pub async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
+        self.inner.execute(app, db).await
     }
 
     pub async fn send(&self, value: anyhow::Result<Option<DBValue>>) -> anyhow::Result<()> {
@@ -72,8 +93,8 @@ impl Command {
         Ok(())
     }
 
-    pub async fn execute_and_send(&self, db: &mut Database) -> anyhow::Result<()> {
-        self.send(self.execute(db)).await?;
+    pub async fn execute_and_send(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<()> {
+        self.send(self.execute(app, db).await).await?;
         Ok(())
     }
 
@@ -88,7 +109,7 @@ impl Command {
             nanos: now_ts_nanos as i32,
         };
         let msg = ProtoCommand {
-            cmd: self.inner.cmd_id(),
+            cmd: self.inner.cmd_id() as i32,
             ts: Some(ts),
             value: self.inner.encode()?.to_vec(),
         };
@@ -100,6 +121,10 @@ impl Command {
     pub fn encode_to_frames(&self) -> anyhow::Result<Vec<Frame>> {
         let payload = self.encode_to_payload()?;
         frame::build_frames(Kind::CMD, &payload[..])
+    }
+
+    pub fn inner_ref(&self) -> &Box<dyn ExecutableCommand> {
+        &self.inner
     }
 }
 
@@ -124,12 +149,38 @@ impl From<&[u8]> for Command {
         match ProtoCommand::decode(value) {
             Ok(command) => {
                 if let Ok(cmd) = parse_proto_command(command) {
-                    return Command::new(cmd, None);
+                    Command::new(cmd, None)
                 } else {
-                    return Command::new(Box::new(InvalidCommand {}), None);
+                    Command::new(Box::new(InvalidCommand {}), None)
                 }
             }
             Err(_) => Command::new(Box::new(InvalidCommand {}), None),
         }
+    }
+}
+
+impl PostMessage for Command {
+    fn channel(&self) -> Channel {
+        if self.inner_ref().is_raft_cmd() {
+            Channel::RaftMsg
+        }else {
+            Channel::DbCmdReq
+        }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+pub struct ProposalCommand(pub Command);
+
+impl PostMessage for ProposalCommand {
+    fn channel(&self) -> Channel {
+        Channel::RaftProposal
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

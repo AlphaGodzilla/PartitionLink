@@ -22,8 +22,10 @@ use crate::{
     connection::connection::Connection,
     protocol::{frame::Frame, kind::Kind},
 };
+use crate::command::proto::ProtoCmd;
+use crate::runtime::Runtime;
 
-pub fn start_cmd_server(ctx: RefContext, cfg: Arc<Config>) -> anyhow::Result<JoinHandle<()>> {
+pub fn start_cmd_server(app: Arc<Runtime>, ctx: RefContext, cfg: Arc<Config>) -> anyhow::Result<JoinHandle<()>> {
     let addr = String::from(&cfg.listen_addr);
     let port = cfg.listen_port;
     let bind = format!("{}:{}", addr, port);
@@ -41,7 +43,7 @@ pub fn start_cmd_server(ctx: RefContext, cfg: Arc<Config>) -> anyhow::Result<Joi
                     info!("Command server loop stop");
                     break;
                 },
-                _ = accept(ctx.clone(), cfg.clone(), &tcp_listener) => {
+                _ = accept(app.clone(), ctx.clone(), cfg.clone(), &tcp_listener) => {
                 }
             }
         }
@@ -49,17 +51,17 @@ pub fn start_cmd_server(ctx: RefContext, cfg: Arc<Config>) -> anyhow::Result<Joi
     Ok(handler)
 }
 
-async fn accept(ctx: RefContext, cfg: Arc<Config>, tcp_listener: &TcpListener) {
+async fn accept(app: Arc<Runtime>, ctx: RefContext, cfg: Arc<Config>, tcp_listener: &TcpListener) {
     match tcp_listener.accept().await {
         Ok((socket, addr)) => {
             let addr = addr.to_string();
-            info!("Accepet new conn {}", &addr);
-            let cfg = cfg.clone();
+            info!("Accept new conn {}", &addr);
+            // let cfg = cfg.clone();
             let ctx = ctx.clone();
             // 在另外的线程进行处理
             tokio::spawn(async move {
                 info!("new connect {}", &addr);
-                connection(ctx, socket, None).await;
+                connection(Some(app.as_ref()), ctx, socket, None).await;
                 info!("disconnect {}", &addr);
             });
         }
@@ -70,6 +72,7 @@ async fn accept(ctx: RefContext, cfg: Arc<Config>, tcp_listener: &TcpListener) {
 }
 
 pub async fn connection(
+    app: Option<&Runtime>,
     ctx: RefContext,
     stream: TcpStream,
     mut send_msg_box: Option<mpsc::Receiver<Vec<Frame>>>,
@@ -88,7 +91,7 @@ pub async fn connection(
                     }
                 },
                 message = read_message(&conn) => {
-                    if post_read_message(&conn, message).await {
+                    if post_read_message(&conn, message, app).await {
                         break;
                     }
                 }
@@ -99,7 +102,7 @@ pub async fn connection(
                     break;
                 },
                 message = read_message(&conn) => {
-                    if post_read_message(&conn, message).await {
+                    if post_read_message(&conn, message, app).await {
                         break;
                     }
                 }
@@ -197,13 +200,17 @@ async fn read_message(conn: &Connection) -> anyhow::Result<Option<CmdServerMessa
     Ok(None)
 }
 
-async fn post_read_message(conn: &Connection, message: anyhow::Result<Option<CmdServerMessage>>) -> bool {
+async fn post_read_message(
+    conn: &Connection,
+    message: anyhow::Result<Option<CmdServerMessage>>,
+    app: Option<&Runtime>
+) -> bool {
     match message {
         Ok(message_opt) => {
             match message_opt {
                 Some(message) => {
                     // 处理消息
-                    if let Err(err) = handle_cmd_server_message(&conn, message).await {
+                    if let Err(err) = handle_cmd_server_message(&conn, message, app).await {
                         error!("处理命令错误: {:?}", err);
                         if let Err(reply_err) = try_reply_error(&conn, err).await {
                             error!("回复客户端错误: {:?}", reply_err);
@@ -211,9 +218,7 @@ async fn post_read_message(conn: &Connection, message: anyhow::Result<Option<Cmd
                     }
                     false
                 }
-                None => {
-                    true
-                }
+                None => true,
             }
         }
         Err(err) => {
@@ -266,10 +271,7 @@ fn parse_error_message(frames: &[Frame]) -> String {
     String::from_utf8_lossy(&payload[..]).to_string()
 }
 
-async fn handle_cmd_server_message(
-    conn: &Connection,
-    msg: CmdServerMessage,
-) -> anyhow::Result<()> {
+async fn handle_cmd_server_message(conn: &Connection, msg: CmdServerMessage, app: Option<&Runtime>) -> anyhow::Result<()> {
     // debug!("receive new command: {}", cmd);
     match msg {
         CmdServerMessage::PING => {
@@ -284,8 +286,17 @@ async fn handle_cmd_server_message(
             debug!("收到PONG帧, from={}", conn.get_peer_addr());
         }
         CmdServerMessage::CMD(command) => {
-            info!("收到命令: from={}, cmd={}", conn.get_peer_addr(), command)
-            // TODO: 处理收到的CMD命令
+            info!("收到命令: from={}, command={}", conn.get_peer_addr(), command);
+            if command.inner_ref().is_raft_cmd() {
+                if let Some(app) = app {
+                    if let Err(err) = app.postman.send(Box::new(command)).await {
+                        error!("发送command到本地raft消息队列错误, {:?}", err);
+                    }
+                }
+            }else {
+                // 处理收到的CMD命令
+                command.execute(app, None).await?;
+            }
         }
         CmdServerMessage::ERROR(err_msg) => {
             warn!(

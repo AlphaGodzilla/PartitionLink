@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt::Display;
 
 use ahash::AHashMap;
@@ -10,6 +11,8 @@ use super::{
     ExecutableCommand,
 };
 use anyhow::anyhow;
+use async_trait::async_trait;
+use crate::runtime::Runtime;
 
 #[derive(Clone)]
 pub struct HashMapPutCmd {
@@ -18,32 +21,33 @@ pub struct HashMapPutCmd {
     pub member_value: DBValue,
 }
 
+#[async_trait]
 impl ExecutableCommand for HashMapPutCmd {
     fn cmd_type(&self) -> super::CommandType {
         super::CommandType::WRITE
     }
 
-    fn execute(&self, db: &mut Database) -> anyhow::Result<Option<DBValue>> {
-        match db.get_mut(&self.key) {
-            Some(dbvalue) => match dbvalue {
-                DBValue::Hash(hash) => {
-                    hash.insert(self.member_key.clone(), self.member_value.clone());
-                    return Ok(None);
+    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
+        if let Some(db) = db {
+            return match db.get_mut(&self.key) {
+                Some(value) => match value {
+                    DBValue::Hash(ref mut hash) => {
+                        hash.insert(self.member_key.clone(), self.member_value.clone());
+                        Ok(None)
+                    }
+                    _ => {
+                        Err(anyhow!("Mismatch DBValue type, required Hash but got {}",value))
+                    }
+                },
+                None => {
+                    let mut hashmap = AHashMap::new();
+                    hashmap.insert(self.member_key.clone(), self.member_value.clone());
+                    db.set(self.key.clone(), DBValue::Hash(hashmap));
+                    Ok(None)
                 }
-                _ => {
-                    return Err(anyhow!(
-                        "Mismatch DBValue type, required Hash but got {}",
-                        dbvalue
-                    ));
-                }
-            },
-            None => {
-                let mut hashmap = AHashMap::new();
-                hashmap.insert(self.member_key.clone(), self.member_value.clone());
-                db.set(self.key.clone(), DBValue::Hash(hashmap));
-                return Ok(None);
-            }
+            };
         }
+        Ok(None)
     }
 
     fn encode(&self) -> anyhow::Result<bytes::Bytes> {
@@ -59,13 +63,17 @@ impl ExecutableCommand for HashMapPutCmd {
         Ok(buff.freeze())
     }
 
-    fn cmd_id(&self) -> i32 {
-        ProtoCmd::HashMapPutCmd as i32
+    fn cmd_id(&self) -> ProtoCmd {
+        ProtoCmd::HashMapPutCmd
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 impl Display for HashMapPutCmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HashPut")
+        write!(f, "HashPut {} {}", &self.key, &self.member_value)
     }
 }
 

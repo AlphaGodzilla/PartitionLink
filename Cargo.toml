@@ -26,6 +26,7 @@ jni = "0.21.1"
 log = "0.4.22"
 prost = { version = "0.13.1", features = ["derive", "std"] }
 prost-types = "0.13.2"
+protobuf = "2"
 r2d2 = "0.8.10"
 raft = "0.7.0"
 serde = { version = "1.0.208", features = ["std", "derive", "serde_derive"] }

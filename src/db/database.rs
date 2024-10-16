@@ -1,26 +1,27 @@
+use std::sync::Arc;
 use ahash::AHashMap;
-use log::{error, info};
+use log::{debug, error, info, log_enabled};
+use log::Level::Debug;
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_context::context::{Context, RefContext};
 
+use super::dbvalue::DBValue;
+use crate::postman::PostMessage;
 use crate::{
     cluster::{self},
     command::Command,
     connection::manager::ConnectionManager,
 };
-
-use super::dbvalue::DBValue;
+use crate::runtime::Runtime;
 
 pub struct Database {
     pub db: AHashMap<String, DBValue>,
-    pub tx: mpsc::Sender<Command>,
 }
 
 impl Database {
-    pub fn new(tx: mpsc::Sender<Command>) -> Self {
+    pub fn new() -> Self {
         Database {
             db: AHashMap::new(),
-            tx,
         }
     }
 
@@ -38,10 +39,10 @@ impl Database {
 }
 
 pub fn start_db_cmd_channel(
+    app: Arc<Runtime>,
     ctx: RefContext,
     mut db: Database,
-    mut db_recv: mpsc::Receiver<Command>,
-    conn_manager: ConnectionManager,
+    mut db_recv: mpsc::Receiver<Box<dyn PostMessage>>,
 ) -> anyhow::Result<JoinHandle<()>> {
     let hander = tokio::spawn(async move {
         info!("Database channel thread startup");
@@ -53,14 +54,19 @@ pub fn start_db_cmd_channel(
                     break;
                 },
                 Some(command) = db_recv.recv() => {
-                    match command.execute_and_send(&mut db).await  {
-                        Ok(_) => {
-                            // 集群广播
-                            if let Err(err) = cluster::broadcast(&conn_manager, &command).await {
-                                error!("to cluster error: {:?}", err)
-                            }
-                        },
-                        Err(err) => error!("Execute command error: {:?}", err)
+                    if let Some(command ) = command.as_any().downcast_ref::<Command>() {
+                        match command.execute_and_send(Some(app.as_ref()), Some(&mut db)).await  {
+                            Ok(_) => {
+                                // // 集群广播
+                                // if let Err(err) = cluster::broadcast(&conn_manager, &command).await {
+                                //     error!("to cluster error: {:?}", err)
+                                // }
+                                if log_enabled!(Debug) {
+                                    debug!("命令执行成功: {}", command.inner_ref())
+                                }
+                            },
+                            Err(err) => error!("Execute command error: {:?}", err)
+                        }
                     }
                 }
             }

@@ -1,7 +1,8 @@
+use std::any::Any;
 use std::fmt::Display;
-
+use async_trait::async_trait;
 use prost::Message;
-
+use crate::runtime::Runtime;
 use crate::db::{database::Database, dbvalue::DBValue};
 
 use super::{
@@ -15,21 +16,24 @@ pub struct HashMapGetCmd {
     pub member_key: String,
 }
 
+#[async_trait]
 impl ExecutableCommand for HashMapGetCmd {
     fn cmd_type(&self) -> super::CommandType {
         super::CommandType::READ
     }
 
-    fn execute(&self, db: &mut Database) -> anyhow::Result<Option<DBValue>> {
-        if let Some(value) = db.get(&self.key) {
-            match value {
-                DBValue::Hash(hash) => {
-                    return Ok(hash.get(&self.member_key).map(|x| x.clone()));
+    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
+        if let Some(db) = db {
+            if let Some(value) = db.get(&self.key) {
+                return match value {
+                    DBValue::Hash(hash) => {
+                        Ok(hash.get(&self.member_key).map(|x| x.clone()))
+                    }
+                    _ => Ok(None),
                 }
-                _ => return Ok(None),
             }
         }
-        return Ok(None);
+        Ok(None)
     }
 
     fn encode(&self) -> anyhow::Result<bytes::Bytes> {
@@ -42,14 +46,18 @@ impl ExecutableCommand for HashMapGetCmd {
         Ok(buff.freeze())
     }
 
-    fn cmd_id(&self) -> i32 {
-        ProtoCmd::HashMapGetCmd as i32
+    fn cmd_id(&self) -> ProtoCmd {
+        ProtoCmd::HashMapGetCmd
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
 impl Display for HashMapGetCmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HashGet")
+        write!(f, "HashGet {}", &self.key)
     }
 }
 

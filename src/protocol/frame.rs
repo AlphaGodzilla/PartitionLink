@@ -75,8 +75,8 @@ impl Frame {
         self
     }
 
-    pub fn set_kind(&mut self, cmd: Kind) -> &mut Frame {
-        self.header.kind = cmd;
+    pub fn set_kind(&mut self, kind: Kind) -> &mut Frame {
+        self.header.kind = kind;
         self
     }
 
@@ -204,16 +204,16 @@ pub fn build_frames(kind: Kind, payload: &[u8]) -> anyhow::Result<Vec<Frame>> {
             let is_last = current_chunk == chunks_size;
             let frame_head;
             if is_last {
-                frame_head = crate::protocol::head::Head::FIN;
+                frame_head = Head::FIN;
             } else {
-                frame_head = crate::protocol::head::Head::UNFIN;
+                frame_head = Head::UNFIN;
             }
             let mut frame = Frame::new();
             let mut payload = Vec::with_capacity(chunk.len());
             payload.extend_from_slice(chunk);
             frame
                 .set_head(frame_head)
-                .set_kind(Kind::CMD)
+                .set_kind(kind.clone())
                 .set_length(Length::new(chunk.len() as u8))
                 .set_payload(payload);
             frames.push(frame);

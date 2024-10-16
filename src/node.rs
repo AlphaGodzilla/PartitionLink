@@ -1,25 +1,28 @@
+use std::any::Any;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::ptr::hash;
 use crate::config::Config;
-use ahash::{HashMap, HashMapExt};
+use ahash::{AHashMap, HashMap, HashMapExt, RandomState};
 use async_trait::async_trait;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::Mutex;
-
+use tokio::sync::{Mutex, RwLock};
+use crate::postman::{Channel, PostMessage};
 use crate::until::now_ts;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeMsg {
-    pub id: String,
+    pub id: u64,
     pub addr: String,
     pub port: usize,
     pub online: bool,
 }
 
 impl NodeMsg {
-    pub fn new(id: &str, addr: &str, port: usize, online: bool) -> Self {
+    pub fn new(id: u64, addr: &str, port: usize, online: bool) -> Self {
         NodeMsg {
-            id: String::from(id),
+            id,
             addr: String::from(addr),
             port,
             online,
@@ -30,16 +33,16 @@ impl NodeMsg {
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct Node {
     pub addr: String,
-    pub id: String,
+    pub id: u64,
     pub port: usize,
     pub is_self: bool,
     pub online: bool,
 }
 
 impl Node {
-    pub fn new(addr: &str, id: &str, port: usize, is_self: bool, online: bool) -> Self {
+    pub fn new(addr: &str, id: u64, port: usize, is_self: bool, online: bool) -> Self {
         Node {
-            id: String::from(id),
+            id,
             addr: String::from(addr),
             port,
             is_self,
@@ -52,31 +55,54 @@ impl Node {
     }
 }
 
+impl PostMessage for Node {
+    fn channel(&self) -> Channel {
+        Channel::Discover
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+pub struct ProposalAddNode(pub Node);
+
+impl PostMessage for ProposalAddNode {
+    fn channel(&self) -> Channel {
+        Channel::RaftProposal
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 #[async_trait]
 pub trait NodeManager {
     // 刷新Node
     async fn ping(&mut self, node: Node) -> anyhow::Result<()>;
     // 检查Node是否存在
-    async fn exist(&self, id: &str) -> anyhow::Result<bool>;
+    async fn exist(&self, id: &u64) -> anyhow::Result<bool>;
     // 清理Node列表
     async fn prune(&mut self) -> anyhow::Result<usize>;
     // 返回其它节点列表
     async fn get_other_nodes(&self) -> Vec<Arc<Node>>;
+    // 返回传入节点ID的节点
+    async fn get_other_node(&self, id: &u64) -> Option<Arc<Node>>;
 }
 
 #[derive(Clone)]
 pub struct NodeTable {
     cfg: Arc<Config>,
-    nodes: HashMap<String, Arc<Node>>,
-    expire_until: HashMap<String, u128>,
+    nodes: AHashMap<u64, Arc<Node>>,
+    expire_until: AHashMap<u64, u128>,
 }
 
 impl NodeTable {
     pub fn new(cfg: Arc<Config>) -> Self {
         NodeTable {
             cfg,
-            nodes: HashMap::new(),
-            expire_until: HashMap::new(),
+            nodes: AHashMap::new(),
+            expire_until: AHashMap::new(),
         }
     }
 }
@@ -84,7 +110,7 @@ impl NodeTable {
 #[async_trait]
 impl NodeManager for NodeTable {
     async fn ping(&mut self, node: Node) -> anyhow::Result<()> {
-        let id = String::from(&node.id);
+        let id = node.id;
         if !node.online {
             // 节点下线，从节点表中删除节点
             self.nodes.remove(&id);
@@ -92,17 +118,17 @@ impl NodeManager for NodeTable {
             info!("Node offline remove {}", serde_json::to_string(&node)?);
             return Ok(());
         }
-        let id_copy = id.clone();
+        // let id_copy = id.clone();
         if !self.nodes.contains_key(&id) {
             info!("New Node {}", serde_json::to_string(&node)?);
             self.nodes.insert(id, Arc::new(node));
         }
         let until = now_ts()? + self.cfg.disc_multicast_ttl.as_millis();
-        self.expire_until.insert(id_copy, until);
+        self.expire_until.insert(id, until);
         Ok(())
     }
 
-    async fn exist(&self, id: &str) -> anyhow::Result<bool> {
+    async fn exist(&self, id: &u64) -> anyhow::Result<bool> {
         let now = now_ts()?;
         Ok(self.nodes.contains_key(id) && self.expire_until.get(id).unwrap_or(&0) > &now)
     }
@@ -131,17 +157,22 @@ impl NodeManager for NodeTable {
             .map(|x| x.clone())
             .collect()
     }
+
+    async fn get_other_node(&self, id: &u64) -> Option<Arc<Node>> {
+        self.nodes.get(id)
+            .map(|x| x.clone())
+    }
 }
 
 #[derive(Clone)]
 pub struct ShareNodeTable {
-    inner: Arc<Mutex<NodeTable>>,
+    inner: Arc<RwLock<NodeTable>>,
 }
 
 impl ShareNodeTable {
     pub fn new(node_table: NodeTable) -> Self {
         ShareNodeTable {
-            inner: Arc::new(Mutex::new(node_table)),
+            inner: Arc::new(RwLock::new(node_table)),
         }
     }
 }
@@ -150,22 +181,43 @@ impl ShareNodeTable {
 impl NodeManager for ShareNodeTable {
     // 刷新Node
     async fn ping(&mut self, node: Node) -> anyhow::Result<()> {
-        let mut nt = self.inner.lock().await;
+        let mut nt = self.inner.write().await;
         nt.ping(node).await
     }
     // 检查Node是否存在
-    async fn exist(&self, id: &str) -> anyhow::Result<bool> {
-        let nt = self.inner.lock().await;
+    async fn exist(&self, id: &u64) -> anyhow::Result<bool> {
+        let nt = self.inner.read().await;
         nt.exist(id).await
     }
     // 清理Node列表
     async fn prune(&mut self) -> anyhow::Result<usize> {
-        let mut nt = self.inner.lock().await;
+        let mut nt = self.inner.write().await;
         nt.prune().await
     }
     // 返回其它节点列表
     async fn get_other_nodes(&self) -> Vec<Arc<Node>> {
-        let nt = self.inner.lock().await;
+        let nt = self.inner.read().await;
         nt.get_other_nodes().await
+    }
+
+    async fn get_other_node(&self, id: &u64) -> Option<Arc<Node>> {
+        let nt = self.inner.read().await;
+        nt.get_other_node(id).await
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use ahash::RandomState;
+    use uuid::Uuid;
+
+    #[test]
+    pub fn string_hash_code_test() {
+        let hasher = RandomState::new();
+        for _ in 0..10 {
+            let node_id = Uuid::new_v4().to_string();
+            println!("{} -> {}", &node_id, hasher.hash_one(&node_id));
+        }
     }
 }

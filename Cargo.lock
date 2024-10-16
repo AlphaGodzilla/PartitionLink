@@ -16,6 +16,7 @@ dependencies = [
  "prost",
  "prost-build",
  "prost-types",
+ "protobuf",
  "r2d2",
  "raft",
  "serde",

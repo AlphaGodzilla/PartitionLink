@@ -2,7 +2,7 @@ use log::{debug, trace};
 
 use crate::{command::Command, connection::manager::ConnectionManager, protocol::frame::Frame};
 
-pub mod raft;
+pub mod cluster;
 
 pub async fn broadcast(conn_manager: &ConnectionManager, command: &Command) -> anyhow::Result<()> {
     let mut frames = command.encode_to_frames()?;

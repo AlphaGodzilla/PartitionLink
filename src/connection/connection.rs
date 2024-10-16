@@ -14,7 +14,7 @@ use tokio::{
     },
     sync::Mutex,
 };
-
+use crate::protocol::frame::build_frames;
 use crate::protocol::frame::FrameMissMatchReason;
 use crate::{
     node::Node,
@@ -140,7 +140,7 @@ impl Connection {
     /// Write a frame to the connection.
     pub async fn write_frame(&self, frames: &mut [Frame]) -> anyhow::Result<()> {
         let mut write_stream = self.write_stream.lock().await;
-        for mut frame in frames {
+        for frame in frames {
             write_stream.write(frame.encode()).await?;
         }
         write_stream.flush().await?;
