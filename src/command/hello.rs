@@ -1,19 +1,18 @@
+use super::{
+    CommandType, ExecutableCommand,
+};
 use crate::db::{database::Database, dbvalue::DBValue};
+use crate::proto::command_message::Cmd;
+use crate::proto::HelloCmd;
 use crate::runtime::Runtime;
 use async_trait::async_trait;
-use prost::Message;
 use std::any::Any;
 use std::fmt::Display;
 
-use super::{
-    proto::{ProtoCmd, ProtoCommand, ProtoHelloCmd},
-    CommandType, ExecutableCommand,
-};
-
-#[derive(Clone)]
-pub struct HelloCmd {
-    pub valid: bool,
-}
+// #[derive(Clone)]
+// pub struct HelloCmd {
+//     pub valid: bool,
+// }
 
 #[async_trait]
 impl ExecutableCommand for HelloCmd {
@@ -29,16 +28,10 @@ impl ExecutableCommand for HelloCmd {
         Ok(None)
     }
 
-    fn encode(&self) -> anyhow::Result<bytes::Bytes> {
-        let mut buff = bytes::BytesMut::new();
-        let msg = ProtoHelloCmd { valid: self.valid };
-        msg.encode(&mut buff)?;
-        Ok(buff.freeze())
+    fn to_cmd(&self) -> anyhow::Result<Cmd> {
+        Ok(Cmd::Hello(self.clone()))
     }
 
-    fn cmd_id(&self) -> ProtoCmd {
-        ProtoCmd::HelloCmd
-    }
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -50,17 +43,14 @@ impl Display for HelloCmd {
     }
 }
 
-impl From<ProtoHelloCmd> for HelloCmd {
-    fn from(value: ProtoHelloCmd) -> Self {
-        HelloCmd { valid: value.valid }
-    }
-}
-
-impl TryFrom<ProtoCommand> for HelloCmd {
+impl TryFrom<Cmd> for HelloCmd {
     type Error = anyhow::Error;
 
-    fn try_from(value: ProtoCommand) -> Result<Self, Self::Error> {
-        let hello_cmd = ProtoHelloCmd::decode(&value.value[..])?;
-        Ok(hello_cmd.into())
+    fn try_from(value: Cmd) -> Result<Self, Self::Error> {
+        if let Cmd::Hello(hello_cmd) = value {
+            Ok(hello_cmd)
+        }else {
+            Err(anyhow::anyhow!("invalid command"))
+        }
     }
 }

@@ -94,11 +94,11 @@ impl From<PDbValue> for DBValue {
         let value = value.value.unwrap();
         match value {
             DbValueEnum::None(_) => DBValue::None,
-            DbValueEnum::Bool(b) => DBValue::Boolean(b.value),
-            DbValueEnum::String(s) => DBValue::String(s.value),
-            DbValueEnum::Bytes(b) => DBValue::Bytes(b.value),
+            DbValueEnum::Bool(b) => DBValue::Boolean(b),
+            DbValueEnum::String(s) => DBValue::String(s),
+            DbValueEnum::Bytes(b) => DBValue::Bytes(b),
             DbValueEnum::List(l) => {
-                let l: Vec<DBValue> = l.values.into_iter().map(|x| x.into()).collect();
+                let l: Vec<DBValue> = l.value.into_iter().map(|x| x.into()).collect();
                 DBValue::List(l)
             }
             DbValueEnum::Hash(h) => {
@@ -110,10 +110,10 @@ impl From<PDbValue> for DBValue {
     }
 }
 
-impl From<ProtoDbValue> for proto_db_value::Value {
-    fn from(value: ProtoDbValue) -> Self {
+impl From<PDbValue> for DbValueEnum {
+    fn from(value: PDbValue) -> Self {
         if let None = value.value {
-            return proto_db_value::Value::NoneDbValue(false);
+            return DbValueEnum::None(false);
         }
         value.value.unwrap()
     }

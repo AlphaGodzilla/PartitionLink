@@ -1,5 +1,3 @@
-use crate::command::proto::ProtoCmd;
-use crate::command::raft::RaftCmd;
 use crate::command::{Command, ProposalCommand};
 use crate::config::Config;
 use crate::connection::manager::ConnectionManager;
@@ -21,6 +19,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tokio_context::context::{Context, RefContext};
+use crate::proto::RaftCmd;
 
 pub struct ClusterNode {
     conn_manager: ConnectionManager,
@@ -90,7 +89,7 @@ impl ClusterNode {
                                         Ok(bytes) => {
                                             let command = Command::new(
                                                 Box::new(RaftCmd {
-                                                    body: DBValue::Bytes(bytes),
+                                                    body: bytes,
                                                 }),
                                                 None,
                                             );
@@ -190,7 +189,7 @@ impl ClusterNode {
             match self.mailbox.try_recv() {
                 Ok(msg) => {
                     if let Some(command) = msg.as_any().downcast_ref::<Command>() {
-                        if ProtoCmd::RaftCmd == command.inner_ref().cmd_id() {
+                        if command.inner_ref().is_raft_cmd() {
                             if let Some(raft_cmd) =
                                 command.inner_ref().as_any().downcast_ref::<RaftCmd>()
                             {

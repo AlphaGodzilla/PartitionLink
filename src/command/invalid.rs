@@ -3,8 +3,8 @@ use crate::runtime::Runtime;
 use async_trait::async_trait;
 use std::any::Any;
 use std::fmt::Display;
-
-use super::{proto::ProtoCmd, CommandType, ExecutableCommand};
+use crate::proto::command_message::Cmd;
+use super::{CommandType, ExecutableCommand};
 
 #[derive(Clone)]
 pub struct InvalidCommand {}
@@ -23,13 +23,10 @@ impl ExecutableCommand for InvalidCommand {
         Ok(None)
     }
 
-    fn encode(&self) -> anyhow::Result<bytes::Bytes> {
-        Err(anyhow::anyhow!("InvalidCommand cannot encode"))
+    fn to_cmd(&self) -> anyhow::Result<Cmd> {
+        Err(anyhow::anyhow!("InvalidCommand cannot to cmd"))
     }
 
-    fn cmd_id(&self) -> ProtoCmd {
-        ProtoCmd::Unknown
-    }
     fn as_any(&self) -> &dyn Any {
         self
     }

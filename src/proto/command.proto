@@ -3,7 +3,25 @@ syntax = "proto3";
 package command;
 
 import "google/protobuf/timestamp.proto";
-import "proto/dbvalue.proto";
+
+message List {
+    repeated DBValue value = 1;
+}
+
+message Hash {
+    map<string, DBValue> values = 1;
+}
+
+message DBValue {
+    oneof value {
+        bool none = 1;
+        bool bool = 2;
+        string string = 3;
+        bytes bytes = 4;
+        List list = 5;
+        Hash hash = 6;
+    }
+}
 
 message HelloCmd {
     bool valid = 1;
@@ -12,7 +30,7 @@ message HelloCmd {
 message HashPutCmd {
     string key = 1;
     string member_key = 2;
-    dbvalue.DBValue member_value = 3;
+    DBValue member_value = 3;
 }
 
 message HashGetCmd {

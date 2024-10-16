@@ -4,20 +4,20 @@ use async_trait::async_trait;
 use prost::Message;
 use crate::runtime::Runtime;
 use crate::db::{database::Database, dbvalue::DBValue};
-
+use crate::proto::command_message::Cmd;
+use crate::proto::HashGetCmd;
 use super::{
-    proto::{ProtoCmd, ProtoCommand, ProtoHashMapGetCmd},
     ExecutableCommand,
 };
 
-#[derive(Clone)]
-pub struct HashMapGetCmd {
-    pub key: String,
-    pub member_key: String,
-}
+// #[derive(Clone)]
+// pub struct HashGetCmd {
+//     pub key: String,
+//     pub member_key: String,
+// }
 
 #[async_trait]
-impl ExecutableCommand for HashMapGetCmd {
+impl ExecutableCommand for HashGetCmd {
     fn cmd_type(&self) -> super::CommandType {
         super::CommandType::READ
     }
@@ -36,18 +36,8 @@ impl ExecutableCommand for HashMapGetCmd {
         Ok(None)
     }
 
-    fn encode(&self) -> anyhow::Result<bytes::Bytes> {
-        let mut buff = bytes::BytesMut::new();
-        let msg = ProtoHashMapGetCmd {
-            key: self.key.clone(),
-            member_key: self.member_key.clone(),
-        };
-        msg.encode(&mut buff)?;
-        Ok(buff.freeze())
-    }
-
-    fn cmd_id(&self) -> ProtoCmd {
-        ProtoCmd::HashMapGetCmd
+    fn to_cmd(&self) -> anyhow::Result<Cmd> {
+       Ok(Cmd::HashGet(self.clone()))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -55,26 +45,20 @@ impl ExecutableCommand for HashMapGetCmd {
     }
 }
 
-impl Display for HashMapGetCmd {
+impl Display for HashGetCmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "HashGet {}", &self.key)
     }
 }
 
-impl From<ProtoHashMapGetCmd> for HashMapGetCmd {
-    fn from(value: ProtoHashMapGetCmd) -> Self {
-        HashMapGetCmd {
-            key: value.key,
-            member_key: value.member_key,
-        }
-    }
-}
-
-impl TryFrom<ProtoCommand> for HashMapGetCmd {
+impl TryFrom<Cmd> for HashGetCmd {
     type Error = anyhow::Error;
 
-    fn try_from(value: ProtoCommand) -> Result<Self, Self::Error> {
-        let cmd = ProtoHashMapGetCmd::decode(&value.value[..])?;
-        Ok(cmd.into())
+    fn try_from(value: Cmd) -> Result<Self, Self::Error> {
+        if let Cmd::HashGet(hash) = value {
+            Ok(hash)
+        }else {
+            Err(anyhow::Error::msg("Invalid command"))
+        }
     }
 }

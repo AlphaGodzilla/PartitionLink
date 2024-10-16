@@ -1,16 +1,16 @@
-use crate::command::proto::ProtoCmd;
 use crate::db::{database::Database, dbvalue::DBValue};
 use crate::postman::{Channel, LetterMessage};
+use crate::proto::command_message::Cmd;
+use crate::proto::{CommandMessage, HelloCmd, RaftCmd};
 use crate::protocol::frame::{self, Frame};
 use crate::protocol::kind::Kind;
 use crate::runtime::Runtime;
 use crate::until;
 use async_trait::async_trait;
-use hello::HelloCmd;
 use invalid::InvalidCommand;
 use prost::Message;
 use prost_types::Timestamp;
-use proto::ProtoCommand;
+use protobuf::reflect::ProtobufValue;
 use register_info::parse_proto_command;
 use std::any::Any;
 use std::fmt::Display;
@@ -31,7 +31,7 @@ pub enum CommandType {
 
 // 所有命令必须实现该trait
 #[async_trait]
-pub trait ExecutableCommand: Display + Send + Sync {
+pub trait ExecutableCommand: Display + Send + Sync + Any {
     // 命令类型，分为读类型和写类型
     fn cmd_type(&self) -> CommandType;
 
@@ -43,14 +43,12 @@ pub trait ExecutableCommand: Display + Send + Sync {
     ) -> anyhow::Result<Option<DBValue>>;
 
     // 编码为字节数组
-    fn encode(&self) -> anyhow::Result<bytes::Bytes>;
+    fn to_cmd(&self) -> anyhow::Result<Cmd>;
 
-    // 编码的命令ID
-    fn cmd_id(&self) -> ProtoCmd;
     fn as_any(&self) -> &dyn Any;
 
     fn is_raft_cmd(&self) -> bool {
-        self.cmd_id() == ProtoCmd::RaftCmd
+        self.as_any().is::<RaftCmd>()
     }
 
     fn is_write_type(&self) -> bool {
@@ -62,7 +60,7 @@ pub trait ExecutableCommand: Display + Send + Sync {
     }
 
     fn is_valid(&self) -> bool {
-        self.cmd_id() != ProtoCmd::Unknown
+        self.as_any().is::<InvalidCommand>()
     }
 }
 
@@ -119,10 +117,9 @@ impl Command {
             seconds: now_ts_sec,
             nanos: now_ts_nanos as i32,
         };
-        let msg = ProtoCommand {
-            cmd: self.inner.cmd_id() as i32,
+        let msg = CommandMessage {
             ts: Some(ts),
-            value: self.inner.encode()?.to_vec(),
+            cmd: Some(self.inner.to_cmd()?)
         };
         let mut buff = bytes::BytesMut::new();
         msg.encode(&mut buff)?;
@@ -157,12 +154,17 @@ impl From<&str> for Command {
 // 从字节数组解析Command
 impl From<&[u8]> for Command {
     fn from(value: &[u8]) -> Self {
-        match ProtoCommand::decode(value) {
-            Ok(command) => {
-                if let Ok(cmd) = parse_proto_command(command) {
-                    Command::new(cmd, None)
-                } else {
-                    Command::new(Box::new(InvalidCommand {}), None)
+        match CommandMessage::decode(value) {
+            Ok(command_message) => {
+                match command_message.cmd {
+                    Some(cmd) => {
+                        if let Ok(cmd) = parse_proto_command(cmd) {
+                            Command::new(cmd, None)
+                        } else {
+                            Command::new(Box::new(InvalidCommand {}), None)
+                        }
+                    }
+                    None => Command::new(Box::new(InvalidCommand {}), None)
                 }
             }
             Err(_) => Command::new(Box::new(InvalidCommand {}), None),

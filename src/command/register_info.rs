@@ -1,20 +1,11 @@
-use super::{
-    hash_get::HashMapGetCmd,
-    hash_put::HashMapPutCmd,
-    hello::HelloCmd,
-    invalid::InvalidCommand,
-    proto::{ProtoCmd, ProtoCommand},
-    raft::RaftCmd,
-    ExecutableCommand,
-};
+use super::ExecutableCommand;
+use crate::proto::command_message::Cmd;
 
-pub fn parse_proto_command(cmd: ProtoCommand) -> anyhow::Result<Box<dyn ExecutableCommand>> {
-    let p_cmd = ProtoCmd::try_from(cmd.cmd)?;
-    match p_cmd {
-        ProtoCmd::HelloCmd => Ok(Box::new(HelloCmd::try_from(cmd)?)),
-        ProtoCmd::HashMapPutCmd => Ok(Box::new(HashMapPutCmd::try_from(cmd)?)),
-        ProtoCmd::HashMapGetCmd => Ok(Box::new(HashMapGetCmd::try_from(cmd)?)),
-        ProtoCmd::RaftCmd => Ok(Box::new(RaftCmd::try_from(cmd)?)),
-        _ => Ok(Box::new(InvalidCommand {})),
+pub fn parse_proto_command(cmd: Cmd) -> anyhow::Result<Box<dyn ExecutableCommand>> {
+    match cmd {
+        Cmd::Hello(v) => Ok(Box::new(v)),
+        Cmd::HashPut(v) => Ok(Box::new(v)),
+        Cmd::HashGet(v) => Ok(Box::new(v)),
+        Cmd::Raft(v) => Ok(Box::new(v)),
     }
 }

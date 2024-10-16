@@ -8,12 +8,12 @@ use std::{
 };
 
 use crate::command::Command;
-use command::{hash_get::HashMapGetCmd, hash_put::HashMapPutCmd};
 use db::dbvalue::DBValue;
 use log::{debug, error, info};
 use runtime::Runtime;
 use tokio::{select, signal, sync::mpsc, task::JoinHandle};
 use tokio_context::context::RefContext;
+use crate::proto::{HashGetCmd, HashPutCmd};
 
 mod cluster;
 mod cmd_server;
@@ -77,13 +77,13 @@ pub fn execute_cmd(
         let app_ref = app.clone();
         runtime.spawn(async move {
             let (dbvalue_tx, mut dbvalue_rx) = mpsc::channel(1);
-            let cmd = Box::new(HashMapPutCmd {
+            let cmd = Box::new(HashPutCmd {
                 key: String::from("UserConnectStateMap"),
                 member_key: String::from("jason"),
-                member_value: DBValue::String(String::from(format!(
+                member_value: Some(DBValue::String(String::from(format!(
                     "online: {}",
                     adder_copy.fetch_add(1, Ordering::SeqCst)
-                ))),
+                ))).into()),
             });
             let command = Box::new(Command::new(cmd, Some(dbvalue_tx.clone())));
             if let Err(err) = app_ref.postman.send(command).await {
@@ -103,7 +103,7 @@ pub fn execute_cmd(
                     }
                 }
             }
-            let cmd = Box::new(HashMapGetCmd {
+            let cmd = Box::new(HashGetCmd {
                 key: String::from("UserConnectStateMap"),
                 member_key: String::from("jason"),
             });
