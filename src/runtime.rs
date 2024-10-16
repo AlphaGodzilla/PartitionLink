@@ -1,15 +1,15 @@
-use anyhow::anyhow;
-use std::sync::Arc;
-use tokio::task::JoinHandle;
-use tokio_context::context::RefContext;
 use crate::cluster::cluster::start_cluster;
 use crate::cmd_server::start_cmd_server;
 use crate::config::Config;
 use crate::connection::manager::ConnectionManager;
 use crate::db::database::{start_db_cmd_channel, Database};
 use crate::discover::start_discover;
-use crate::postman::{Channel, Postman};
 use crate::node::{NodeTable, ShareNodeTable};
+use crate::postman::{Channel, Postman};
+use anyhow::anyhow;
+use std::sync::Arc;
+use tokio::task::JoinHandle;
+use tokio_context::context::RefContext;
 
 // 运行时作用：负责节点发现和数据同步
 pub struct Runtime {
@@ -22,7 +22,7 @@ impl Runtime {
     pub fn new(cfg: Arc<Config>) -> Self {
         Runtime {
             postman: Postman::new(),
-            cfg
+            cfg,
         }
     }
 
@@ -39,11 +39,20 @@ impl Runtime {
         let conn_manager = ConnectionManager::new(node_manager.clone());
 
         // 启动节点发现
-        let recv = app.postman.new_channel(crate::postman::Channel::Discover, 16).await;
+        let recv = app
+            .postman
+            .new_channel(crate::postman::Channel::Discover, 16)
+            .await;
         if recv.is_none() {
             return Err(anyhow!("Discover通道已被打开，无法启动"));
         }
-        let discover_handler = start_discover(app.clone(), ctx.clone(), app.cfg.clone(), node_manager.clone(), recv.unwrap())?;
+        let discover_handler = start_discover(
+            app.clone(),
+            ctx.clone(),
+            app.cfg.clone(),
+            node_manager.clone(),
+            recv.unwrap(),
+        )?;
 
         // 启动cmd server用于监听其它进程发送过来的命令
         let cmd_server_handler = start_cmd_server(app.clone(), ctx.clone(), app.cfg.clone())?;
@@ -61,11 +70,11 @@ impl Runtime {
         // 启动集群
         let cluster_mailbox = app.postman.new_channel(Channel::RaftMsg, 32).await;
         if cluster_mailbox.is_none() {
-            return Err(anyhow!("集群消息通道已被打开，无法启动"))
+            return Err(anyhow!("集群消息通道已被打开，无法启动"));
         }
         let proposal_mailbox = app.postman.new_channel(Channel::RaftProposal, 32).await;
         if proposal_mailbox.is_none() {
-            return Err(anyhow!("提案消息通道已被打开，无法启动"))
+            return Err(anyhow!("提案消息通道已被打开，无法启动"));
         }
         let cluster_handler = start_cluster(
             ctx.clone(),

@@ -1,8 +1,8 @@
+use crate::db::{database::Database, dbvalue::DBValue};
+use crate::runtime::Runtime;
+use async_trait::async_trait;
 use std::any::Any;
 use std::fmt::Display;
-use async_trait::async_trait;
-use crate::runtime::Runtime;
-use crate::db::{database::Database, dbvalue::DBValue};
 
 use super::{proto::ProtoCmd, CommandType, ExecutableCommand};
 
@@ -15,7 +15,11 @@ impl ExecutableCommand for InvalidCommand {
         CommandType::READ
     }
 
-    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
+    async fn execute(
+        &self,
+        app: Option<&Runtime>,
+        db: Option<&mut Database>,
+    ) -> anyhow::Result<Option<DBValue>> {
         Ok(None)
     }
 

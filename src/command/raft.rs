@@ -1,21 +1,21 @@
-use std::any::Any;
-use std::fmt::{Display, Formatter};
-use anyhow::anyhow;
-use async_trait::async_trait;
-use bytes::Bytes;
-use prost::Message as PrMessage;
 use crate::command::proto::ProtoRaftCmd;
 use crate::command::{CommandType, ExecutableCommand};
 use crate::db::database::Database;
 use crate::db::dbvalue::DBValue;
+use anyhow::anyhow;
+use async_trait::async_trait;
+use bytes::Bytes;
+use prost::Message as PrMessage;
+use std::any::Any;
+use std::fmt::{Display, Formatter};
 
 use super::proto::{ProtoCmd, ProtoCommand};
 
+use crate::postman::Channel;
+use crate::postman::PostMessage;
+use crate::runtime::Runtime;
 use protobuf::Message as PbMessage;
 use raft::prelude::Message;
-use crate::postman::Channel;
-use crate::runtime::Runtime;
-use crate::postman::PostMessage;
 
 #[derive(Clone)]
 pub struct RaftCmd {
@@ -28,7 +28,11 @@ impl ExecutableCommand for RaftCmd {
         CommandType::WRITE
     }
 
-    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
+    async fn execute(
+        &self,
+        app: Option<&Runtime>,
+        db: Option<&mut Database>,
+    ) -> anyhow::Result<Option<DBValue>> {
         Ok(None)
     }
 
@@ -76,12 +80,8 @@ impl TryFrom<ProtoCommand> for RaftCmd {
 impl RaftCmd {
     pub fn to_raft_message(&self) -> anyhow::Result<raft::prelude::Message> {
         match &self.body {
-            DBValue::Bytes(bytes) => {
-                Ok(Message::parse_from_bytes(&bytes[..])?)
-            }
-            _ => {
-                Err(anyhow!("value not bytes type"))
-            }
+            DBValue::Bytes(bytes) => Ok(Message::parse_from_bytes(&bytes[..])?),
+            _ => Err(anyhow!("value not bytes type")),
         }
     }
 }

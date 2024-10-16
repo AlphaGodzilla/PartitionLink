@@ -6,7 +6,7 @@ pub mod connection;
 pub mod db;
 pub mod discover;
 pub mod node;
+pub mod postman;
 pub mod protocol;
 pub mod runtime;
 pub mod until;
-pub mod postman;

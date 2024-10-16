@@ -24,10 +24,10 @@ mod connection;
 mod db;
 mod discover;
 mod node;
+mod postman;
 mod protocol;
 mod runtime;
 mod until;
-mod postman;
 
 fn main() {
     env_logger::init();
@@ -45,7 +45,7 @@ fn main() {
         info!("LOCAL_CMD_MODE unset, running only server mode");
         // 阻塞当前线程
         let app = Arc::new(Runtime::new_with_default_config());
-        let app_ref= app.clone();
+        let app_ref = app.clone();
         runtime.block_on(async move { start_runtime(app_ref).await.unwrap() });
     }
 }
@@ -54,8 +54,7 @@ pub fn interval_execute_cmd(runtime: &tokio::runtime::Runtime) {
     let app = Arc::new(Runtime::new_with_default_config());
     let app_ref = app.clone();
     // start server
-    let server_handler =
-        runtime.spawn(async move { start_runtime(app_ref).await.unwrap() });
+    let server_handler = runtime.spawn(async move { start_runtime(app_ref).await.unwrap() });
 
     // try execute cmd
     execute_cmd(runtime, app.clone(), &server_handler);

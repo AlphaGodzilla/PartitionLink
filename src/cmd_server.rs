@@ -14,18 +14,22 @@ use tokio::{
 };
 use tokio_context::context::{Context, RefContext};
 
+use crate::command::proto::ProtoCmd;
 use crate::protocol::frame;
 use crate::protocol::{Segment, CURRENT_VERSION};
+use crate::runtime::Runtime;
 use crate::{
     command::Command,
     config::Config,
     connection::connection::Connection,
     protocol::{frame::Frame, kind::Kind},
 };
-use crate::command::proto::ProtoCmd;
-use crate::runtime::Runtime;
 
-pub fn start_cmd_server(app: Arc<Runtime>, ctx: RefContext, cfg: Arc<Config>) -> anyhow::Result<JoinHandle<()>> {
+pub fn start_cmd_server(
+    app: Arc<Runtime>,
+    ctx: RefContext,
+    cfg: Arc<Config>,
+) -> anyhow::Result<JoinHandle<()>> {
     let addr = String::from(&cfg.listen_addr);
     let port = cfg.listen_port;
     let bind = format!("{}:{}", addr, port);
@@ -203,7 +207,7 @@ async fn read_message(conn: &Connection) -> anyhow::Result<Option<CmdServerMessa
 async fn post_read_message(
     conn: &Connection,
     message: anyhow::Result<Option<CmdServerMessage>>,
-    app: Option<&Runtime>
+    app: Option<&Runtime>,
 ) -> bool {
     match message {
         Ok(message_opt) => {
@@ -271,7 +275,11 @@ fn parse_error_message(frames: &[Frame]) -> String {
     String::from_utf8_lossy(&payload[..]).to_string()
 }
 
-async fn handle_cmd_server_message(conn: &Connection, msg: CmdServerMessage, app: Option<&Runtime>) -> anyhow::Result<()> {
+async fn handle_cmd_server_message(
+    conn: &Connection,
+    msg: CmdServerMessage,
+    app: Option<&Runtime>,
+) -> anyhow::Result<()> {
     // debug!("receive new command: {}", cmd);
     match msg {
         CmdServerMessage::PING => {
@@ -286,14 +294,18 @@ async fn handle_cmd_server_message(conn: &Connection, msg: CmdServerMessage, app
             debug!("收到PONG帧, from={}", conn.get_peer_addr());
         }
         CmdServerMessage::CMD(command) => {
-            info!("收到命令: from={}, command={}", conn.get_peer_addr(), command);
+            info!(
+                "收到命令: from={}, command={}",
+                conn.get_peer_addr(),
+                command
+            );
             if command.inner_ref().is_raft_cmd() {
                 if let Some(app) = app {
                     if let Err(err) = app.postman.send(Box::new(command)).await {
                         error!("发送command到本地raft消息队列错误, {:?}", err);
                     }
                 }
-            }else {
+            } else {
                 // 处理收到的CMD命令
                 command.execute(app, None).await?;
             }

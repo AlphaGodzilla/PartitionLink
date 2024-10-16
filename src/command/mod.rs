@@ -37,7 +37,11 @@ pub trait ExecutableCommand: Display + Send + Sync {
     fn cmd_type(&self) -> CommandType;
 
     // 执行命令
-    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>>;
+    async fn execute(
+        &self,
+        app: Option<&Runtime>,
+        db: Option<&mut Database>,
+    ) -> anyhow::Result<Option<DBValue>>;
 
     // 编码为字节数组
     fn encode(&self) -> anyhow::Result<bytes::Bytes>;
@@ -81,7 +85,11 @@ impl Command {
         }
     }
 
-    pub async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
+    pub async fn execute(
+        &self,
+        app: Option<&Runtime>,
+        db: Option<&mut Database>,
+    ) -> anyhow::Result<Option<DBValue>> {
         self.inner.execute(app, db).await
     }
 
@@ -93,7 +101,11 @@ impl Command {
         Ok(())
     }
 
-    pub async fn execute_and_send(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<()> {
+    pub async fn execute_and_send(
+        &self,
+        app: Option<&Runtime>,
+        db: Option<&mut Database>,
+    ) -> anyhow::Result<()> {
         self.send(self.execute(app, db).await).await?;
         Ok(())
     }
@@ -163,7 +175,7 @@ impl PostMessage for Command {
     fn channel(&self) -> Channel {
         if self.inner_ref().is_raft_cmd() {
             Channel::RaftMsg
-        }else {
+        } else {
             Channel::DbCmdReq
         }
     }

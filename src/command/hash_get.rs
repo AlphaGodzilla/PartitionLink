@@ -1,9 +1,9 @@
-use std::any::Any;
-use std::fmt::Display;
+use crate::db::{database::Database, dbvalue::DBValue};
+use crate::runtime::Runtime;
 use async_trait::async_trait;
 use prost::Message;
-use crate::runtime::Runtime;
-use crate::db::{database::Database, dbvalue::DBValue};
+use std::any::Any;
+use std::fmt::Display;
 
 use super::{
     proto::{ProtoCmd, ProtoCommand, ProtoHashMapGetCmd},
@@ -22,15 +22,17 @@ impl ExecutableCommand for HashMapGetCmd {
         super::CommandType::READ
     }
 
-    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
+    async fn execute(
+        &self,
+        app: Option<&Runtime>,
+        db: Option<&mut Database>,
+    ) -> anyhow::Result<Option<DBValue>> {
         if let Some(db) = db {
             if let Some(value) = db.get(&self.key) {
                 return match value {
-                    DBValue::Hash(hash) => {
-                        Ok(hash.get(&self.member_key).map(|x| x.clone()))
-                    }
+                    DBValue::Hash(hash) => Ok(hash.get(&self.member_key).map(|x| x.clone())),
                     _ => Ok(None),
-                }
+                };
             }
         }
         Ok(None)

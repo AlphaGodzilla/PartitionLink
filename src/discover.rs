@@ -1,21 +1,21 @@
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
-};
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::ptr::hash;
-use log::{error, info, trace};
-use socket2::{Domain, Protocol, Socket, Type};
-use tokio::{net::UdpSocket, select, sync::mpsc, task::JoinHandle, time::interval};
-use tokio::sync::mpsc::Receiver;
-use tokio_context::context::{Context, RefContext};
-use uuid::Uuid;
 use crate::postman::PostMessage;
+use crate::runtime::Runtime;
 use crate::{
     config::Config,
     node::{Node, NodeManager, NodeMsg, ShareNodeTable},
 };
-use crate::runtime::Runtime;
+use log::{error, info, trace};
+use socket2::{Domain, Protocol, Socket, Type};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::ptr::hash;
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
+use tokio::sync::mpsc::Receiver;
+use tokio::{net::UdpSocket, select, sync::mpsc, task::JoinHandle, time::interval};
+use tokio_context::context::{Context, RefContext};
+use uuid::Uuid;
 
 pub struct Discover {
     cfg: Arc<Config>,
@@ -36,11 +36,7 @@ impl Discover {
         }
     }
 
-    pub fn start(
-        &mut self,
-        app: Arc<Runtime>,
-        parent_ctx: RefContext,
-    ) -> anyhow::Result<()> {
+    pub fn start(&mut self, app: Arc<Runtime>, parent_ctx: RefContext) -> anyhow::Result<()> {
         let cfg = self.cfg.clone();
         if self.started {
             // 已经启动

@@ -2,14 +2,18 @@ use crate::command::proto::ProtoCmd;
 use crate::command::raft::RaftCmd;
 use crate::command::{Command, CommandType, ProposalCommand};
 use crate::config::Config;
+use crate::connection::manager::ConnectionManager;
 use crate::db::dbvalue::DBValue;
-use crate::node::{ProposalAddNode, Node, NodeManager, ShareNodeTable};
+use crate::db::dbvalue::DBValue::String;
+use crate::node::{Node, NodeManager, ProposalAddNode, ShareNodeTable};
 use crate::postman::{Channel, PostMessage};
 use crate::runtime::Runtime;
 use anyhow::anyhow;
 use log::{error, info, warn};
 use protobuf::Message as PbMessage;
-use raft::prelude::{ConfChange, ConfChangeType, ConfChangeV2, Entry, EntryType, Message, Snapshot};
+use raft::prelude::{
+    ConfChange, ConfChangeType, ConfChangeV2, Entry, EntryType, Message, Snapshot,
+};
 use raft::storage::MemStorage;
 use raft::{RawNode, StateRole};
 use std::any::Any;
@@ -25,8 +29,6 @@ use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tokio_context::context::{Context, RefContext};
-use crate::connection::manager::ConnectionManager;
-use crate::db::dbvalue::DBValue::String;
 
 pub struct ClusterNode {
     conn_manager: ConnectionManager,
@@ -38,7 +40,12 @@ pub struct ClusterNode {
 }
 
 impl ClusterNode {
-    pub fn new(cfg: Arc<Config>, conn_manager: ConnectionManager, mailbox: Receiver<Box<dyn PostMessage>>, proposal_mailbox: Receiver<Box<dyn PostMessage>>) -> Self {
+    pub fn new(
+        cfg: Arc<Config>,
+        conn_manager: ConnectionManager,
+        mailbox: Receiver<Box<dyn PostMessage>>,
+        proposal_mailbox: Receiver<Box<dyn PostMessage>>,
+    ) -> Self {
         let storage = MemStorage::new();
         ClusterNode {
             conn_manager,
@@ -78,7 +85,9 @@ impl ClusterNode {
                             Some(conn) => {
                                 let writeable = conn.writeable().await;
                                 if writeable.is_err() || !writeable.unwrap() {
-                                    let addr = get_node_addr(node_manager_ref, &to).await.unwrap_or(std::string::String::from(""));
+                                    let addr = get_node_addr(node_manager_ref, &to)
+                                        .await
+                                        .unwrap_or(std::string::String::from(""));
                                     warn!("连接不可写入数据, node_id={}, addr={}", &to, addr);
                                     return;
                                 }
@@ -88,17 +97,26 @@ impl ClusterNode {
                                     match message_bytes {
                                         Ok(bytes) => {
                                             let command = Command::new(
-                                                Box::new(
-                                                    RaftCmd {
-                                                        body: DBValue::Bytes(bytes)
-                                                    }
-                                                ),
-                                                None);
+                                                Box::new(RaftCmd {
+                                                    body: DBValue::Bytes(bytes),
+                                                }),
+                                                None,
+                                            );
                                             match command.encode_to_frames() {
                                                 Ok(mut frames) => {
-                                                    if let Err(err) = conn.write_frame(&mut frames[..]).await {
-                                                        let addr = get_node_addr(node_manager_ref, &to).await.unwrap_or(std::string::String::from(""));
-                                                        error!("帧写入错误, node_id={}, addr={}, {:?}", &to, addr, err);
+                                                    if let Err(err) =
+                                                        conn.write_frame(&mut frames[..]).await
+                                                    {
+                                                        let addr =
+                                                            get_node_addr(node_manager_ref, &to)
+                                                                .await
+                                                                .unwrap_or(
+                                                                    std::string::String::from(""),
+                                                                );
+                                                        error!(
+                                                            "帧写入错误, node_id={}, addr={}, {:?}",
+                                                            &to, addr, err
+                                                        );
                                                     }
                                                 }
                                                 Err(err) => {
@@ -113,13 +131,21 @@ impl ClusterNode {
                                 }
                             }
                             None => {
-                                warn!("尝试建立连接的节点不存在或者为当前节点本身, node_id={}", &to);
+                                warn!(
+                                    "尝试建立连接的节点不存在或者为当前节点本身, node_id={}",
+                                    &to
+                                );
                             }
                         }
                     }
                     Err(err) => {
-                        let addr = get_node_addr(node_manager_ref, &to).await.unwrap_or(std::string::String::from(""));
-                        error!("建立节点连接失败, node_id={}, node_addr={}, detail={:?}", &to, addr, err);
+                        let addr = get_node_addr(node_manager_ref, &to)
+                            .await
+                            .unwrap_or(std::string::String::from(""));
+                        error!(
+                            "建立节点连接失败, node_id={}, node_addr={}, detail={:?}",
+                            &to, addr, err
+                        );
                     }
                 }
             });
@@ -173,7 +199,9 @@ impl ClusterNode {
                 Ok(msg) => {
                     if let Some(command) = msg.as_any().downcast_ref::<Command>() {
                         if ProtoCmd::RaftCmd == command.inner_ref().cmd_id() {
-                            if let Some(raft_cmd) = command.inner_ref().as_any().downcast_ref::<RaftCmd>() {
+                            if let Some(raft_cmd) =
+                                command.inner_ref().as_any().downcast_ref::<RaftCmd>()
+                            {
                                 let raft_message = raft_cmd.to_raft_message()?;
                                 self.step(raft_message)?;
                             }
@@ -181,7 +209,9 @@ impl ClusterNode {
                     }
                 }
                 Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => return Err(anyhow!("cluster mailbox disconnected")),
+                Err(TryRecvError::Disconnected) => {
+                    return Err(anyhow!("cluster mailbox disconnected"))
+                }
             }
         }
 
@@ -194,7 +224,8 @@ impl ClusterNode {
                 Ok(proposal) => {
                     // 提案增加节点
                     if proposal.as_any().is::<ProposalAddNode>() {
-                        if let Some(add_node) = proposal.as_any().downcast_ref::<ProposalAddNode>() {
+                        if let Some(add_node) = proposal.as_any().downcast_ref::<ProposalAddNode>()
+                        {
                             if let Err(err) = self.add_node(add_node) {
                                 error!("propose_conf_change error, {:?}", err);
                             }
@@ -212,7 +243,9 @@ impl ClusterNode {
                     // 其它提案...
                 }
                 Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => return Err(anyhow!("cluster proposal mailbox disconnected")),
+                Err(TryRecvError::Disconnected) => {
+                    return Err(anyhow!("cluster proposal mailbox disconnected"))
+                }
             }
         }
 
@@ -236,7 +269,8 @@ impl ClusterNode {
         }
 
         // apply commited entry
-        self.handle_committed_entries(ready.take_committed_entries(), app).await;
+        self.handle_committed_entries(ready.take_committed_entries(), app)
+            .await;
         // persistent raft logs
         if let Err(e) = store.wl().append(ready.entries()) {
             error!("persist raft log fail: {:?}, need to retry or panic", e);
@@ -253,7 +287,6 @@ impl ClusterNode {
             self.handle_message(ready.take_persisted_messages()).await;
         }
 
-
         // Call `RawNode::advance` interface to update position flags in the raft.
         let mut light_rd = self.raft_group.advance(ready);
         // Update commit index.
@@ -263,7 +296,8 @@ impl ClusterNode {
         // Send out the messages.
         self.handle_message(light_rd.take_messages()).await;
         // Apply all committed entries.
-        self.handle_committed_entries(light_rd.take_committed_entries(), app).await;
+        self.handle_committed_entries(light_rd.take_committed_entries(), app)
+            .await;
         // Advance the apply index.
         self.raft_group.advance_apply();
         Ok(())
@@ -274,7 +308,9 @@ impl ClusterNode {
             return Ok(());
         }
         let node = &add_node.0;
-        let exist = self.raft_group.raft
+        let exist = self
+            .raft_group
+            .raft
             .prs()
             .iter()
             .any(|(id, _)| *id == node.id);
@@ -302,19 +338,23 @@ impl ClusterNode {
     }
 }
 
-pub async fn get_node_addr(node_manager: &(dyn NodeManager + Send + Sync), id: &u64) -> Option<std::string::String> {
+pub async fn get_node_addr(
+    node_manager: &(dyn NodeManager + Send + Sync),
+    id: &u64,
+) -> Option<std::string::String> {
     if let Some(node) = node_manager.get_other_node(id).await {
         return Some(std::string::String::from(&node.addr));
     }
     None
 }
 
-pub fn start_cluster(ctx: RefContext,
-                     cfg: Arc<Config>,
-                     app: Arc<Runtime>,
-                     conn_manager: ConnectionManager,
-                     mailbox: Receiver<Box<dyn PostMessage>>,
-                     proposal_mailbox: Receiver<Box<dyn PostMessage>>,
+pub fn start_cluster(
+    ctx: RefContext,
+    cfg: Arc<Config>,
+    app: Arc<Runtime>,
+    conn_manager: ConnectionManager,
+    mailbox: Receiver<Box<dyn PostMessage>>,
+    proposal_mailbox: Receiver<Box<dyn PostMessage>>,
 ) -> anyhow::Result<JoinHandle<()>> {
     let mut cluster_node = ClusterNode::new(cfg.clone(), conn_manager, mailbox, proposal_mailbox);
     let ctx_copy = ctx.clone();

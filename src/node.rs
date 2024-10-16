@@ -1,15 +1,15 @@
-use std::any::Any;
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::ptr::hash;
 use crate::config::Config;
+use crate::postman::{Channel, PostMessage};
+use crate::until::now_ts;
 use ahash::{AHashMap, HashMap, HashMapExt, RandomState};
 use async_trait::async_trait;
 use log::info;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::ptr::hash;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
-use crate::postman::{Channel, PostMessage};
-use crate::until::now_ts;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeMsg {
@@ -159,8 +159,7 @@ impl NodeManager for NodeTable {
     }
 
     async fn get_other_node(&self, id: &u64) -> Option<Arc<Node>> {
-        self.nodes.get(id)
-            .map(|x| x.clone())
+        self.nodes.get(id).map(|x| x.clone())
     }
 }
 
@@ -205,7 +204,6 @@ impl NodeManager for ShareNodeTable {
         nt.get_other_node(id).await
     }
 }
-
 
 #[cfg(test)]
 mod test {

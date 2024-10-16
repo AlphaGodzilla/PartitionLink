@@ -34,7 +34,7 @@ impl Config {
                 heartbeat_tick: 3,
                 ..Default::default()
             },
-            raft_loop_interval: Duration::from_secs(1)
+            raft_loop_interval: Duration::from_secs(1),
         }
     }
 }

@@ -10,9 +10,9 @@ use super::{
     proto::{ProtoCmd, ProtoCommand, ProtoDbValue, ProtoHashMapPutCmd},
     ExecutableCommand,
 };
+use crate::runtime::Runtime;
 use anyhow::anyhow;
 use async_trait::async_trait;
-use crate::runtime::Runtime;
 
 #[derive(Clone)]
 pub struct HashMapPutCmd {
@@ -27,7 +27,11 @@ impl ExecutableCommand for HashMapPutCmd {
         super::CommandType::WRITE
     }
 
-    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
+    async fn execute(
+        &self,
+        app: Option<&Runtime>,
+        db: Option<&mut Database>,
+    ) -> anyhow::Result<Option<DBValue>> {
         if let Some(db) = db {
             return match db.get_mut(&self.key) {
                 Some(value) => match value {
@@ -35,9 +39,10 @@ impl ExecutableCommand for HashMapPutCmd {
                         hash.insert(self.member_key.clone(), self.member_value.clone());
                         Ok(None)
                     }
-                    _ => {
-                        Err(anyhow!("Mismatch DBValue type, required Hash but got {}",value))
-                    }
+                    _ => Err(anyhow!(
+                        "Mismatch DBValue type, required Hash but got {}",
+                        value
+                    )),
                 },
                 None => {
                     let mut hashmap = AHashMap::new();

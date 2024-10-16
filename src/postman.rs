@@ -1,5 +1,5 @@
-use std::any::Any;
 use ahash::AHashMap;
+use std::any::Any;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{mpsc, RwLock};
 
@@ -29,13 +29,17 @@ pub struct Postman {
 impl Postman {
     pub fn new() -> Self {
         Postman {
-            channels: RwLock::new(AHashMap::new())
+            channels: RwLock::new(AHashMap::new()),
         }
     }
 
     /// 注册通道
     /// 返回一个Option值，None表示channel已注册，Some返回新的消息接收器
-    pub async fn new_channel(&self, channel: Channel, buf_size: usize) -> Option<Receiver<Box<dyn PostMessage>>> {
+    pub async fn new_channel(
+        &self,
+        channel: Channel,
+        buf_size: usize,
+    ) -> Option<Receiver<Box<dyn PostMessage>>> {
         let exist = self.channels.read().await.contains_key(&channel);
         if exist {
             return None;

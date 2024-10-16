@@ -3,6 +3,12 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use crate::protocol::frame::build_frames;
+use crate::protocol::frame::FrameMissMatchReason;
+use crate::{
+    node::Node,
+    protocol::frame::{Frame, FrameMatchResult},
+};
 use bytes::{Buf, BytesMut};
 use log::{info, log_enabled, trace};
 use tokio::io::{BufReader, BufWriter};
@@ -13,12 +19,6 @@ use tokio::{
         TcpStream,
     },
     sync::Mutex,
-};
-use crate::protocol::frame::build_frames;
-use crate::protocol::frame::FrameMissMatchReason;
-use crate::{
-    node::Node,
-    protocol::frame::{Frame, FrameMatchResult},
 };
 
 pub struct Connection {

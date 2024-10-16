@@ -1,9 +1,9 @@
-use std::any::Any;
-use std::fmt::Display;
+use crate::db::{database::Database, dbvalue::DBValue};
+use crate::runtime::Runtime;
 use async_trait::async_trait;
 use prost::Message;
-use crate::runtime::Runtime;
-use crate::db::{database::Database, dbvalue::DBValue};
+use std::any::Any;
+use std::fmt::Display;
 
 use super::{
     proto::{ProtoCmd, ProtoCommand, ProtoHelloCmd},
@@ -21,7 +21,11 @@ impl ExecutableCommand for HelloCmd {
         CommandType::READ
     }
 
-    async fn execute(&self, app: Option<&Runtime>, db: Option<&mut Database>) -> anyhow::Result<Option<DBValue>> {
+    async fn execute(
+        &self,
+        app: Option<&Runtime>,
+        db: Option<&mut Database>,
+    ) -> anyhow::Result<Option<DBValue>> {
         Ok(None)
     }
 

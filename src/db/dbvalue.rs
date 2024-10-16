@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use crate::command::proto::{proto_db_value, ProtoBooleanDbValue, ProtoBytesDbValue, ProtoDbValue, ProtoHashDbValue, ProtoListDbValue, ProtoStringDbValue};
+use crate::command::proto::{
+    proto_db_value, ProtoBooleanDbValue, ProtoBytesDbValue, ProtoDbValue, ProtoHashDbValue,
+    ProtoListDbValue, ProtoStringDbValue,
+};
 use ahash::AHashMap;
 
 #[derive(Clone)]
@@ -40,12 +43,12 @@ impl Display for DBValue {
                 write!(f, ")")?;
             }
             Self::Hash(h) => {
-                write!(f, "DBValue::Hash(\n", )?;
+                write!(f, "DBValue::Hash(\n",)?;
                 let mut iter = h.iter();
-                if let Some((k,v)) = iter.next() {
+                if let Some((k, v)) = iter.next() {
                     write!(f, "  {} = {}", k, v)?;
                     for item in iter {
-                        write!(f, ",\n{}={}", k,v)?;
+                        write!(f, ",\n{}={}", k, v)?;
                     }
                 }
                 write!(f, ")")?;
@@ -67,9 +70,9 @@ impl DBValue {
             DBValue::None => Some(proto_db_value::Value::NoneDbValue(false)),
             DBValue::Boolean(v) => {
                 Some(proto_db_value::Value::BooleanDbValue(ProtoBooleanDbValue {
-                    value: v.clone()
+                    value: v.clone(),
                 }))
-            },
+            }
             DBValue::String(value) => {
                 Some(proto_db_value::Value::StringDbValue(ProtoStringDbValue {
                     value: value.clone(),
