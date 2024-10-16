@@ -6,7 +6,7 @@ use crate::connection::manager::ConnectionManager;
 use crate::db::dbvalue::DBValue;
 use crate::db::dbvalue::DBValue::String;
 use crate::node::{Node, NodeManager, ProposalAddNode, ShareNodeTable};
-use crate::postman::{Channel, PostMessage};
+use crate::postman::{AsAny, Channel, LetterMessage};
 use crate::runtime::Runtime;
 use anyhow::anyhow;
 use log::{error, info, warn};
@@ -34,17 +34,17 @@ pub struct ClusterNode {
     conn_manager: ConnectionManager,
     raft_group: RawNode<MemStorage>,
     // 来自其它节点的消息
-    mailbox: Receiver<Box<dyn PostMessage>>,
+    mailbox: Receiver<Box<dyn LetterMessage>>,
     // 来自本地提案
-    proposal_mailbox: Receiver<Box<dyn PostMessage>>,
+    proposal_mailbox: Receiver<Box<dyn LetterMessage>>,
 }
 
 impl ClusterNode {
     pub fn new(
         cfg: Arc<Config>,
         conn_manager: ConnectionManager,
-        mailbox: Receiver<Box<dyn PostMessage>>,
-        proposal_mailbox: Receiver<Box<dyn PostMessage>>,
+        mailbox: Receiver<Box<dyn LetterMessage>>,
+        proposal_mailbox: Receiver<Box<dyn LetterMessage>>,
     ) -> Self {
         let storage = MemStorage::new();
         ClusterNode {
@@ -353,8 +353,8 @@ pub fn start_cluster(
     cfg: Arc<Config>,
     app: Arc<Runtime>,
     conn_manager: ConnectionManager,
-    mailbox: Receiver<Box<dyn PostMessage>>,
-    proposal_mailbox: Receiver<Box<dyn PostMessage>>,
+    mailbox: Receiver<Box<dyn LetterMessage>>,
+    proposal_mailbox: Receiver<Box<dyn LetterMessage>>,
 ) -> anyhow::Result<JoinHandle<()>> {
     let mut cluster_node = ClusterNode::new(cfg.clone(), conn_manager, mailbox, proposal_mailbox);
     let ctx_copy = ctx.clone();

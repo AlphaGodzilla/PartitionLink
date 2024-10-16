@@ -1,6 +1,6 @@
 use crate::command::proto::ProtoCmd;
 use crate::db::{database::Database, dbvalue::DBValue};
-use crate::postman::{Channel, PostMessage};
+use crate::postman::{Channel, LetterMessage};
 use crate::protocol::frame::{self, Frame};
 use crate::protocol::kind::Kind;
 use crate::runtime::Runtime;
@@ -171,7 +171,7 @@ impl From<&[u8]> for Command {
     }
 }
 
-impl PostMessage for Command {
+impl LetterMessage for Command {
     fn channel(&self) -> Channel {
         if self.inner_ref().is_raft_cmd() {
             Channel::RaftMsg
@@ -179,20 +179,12 @@ impl PostMessage for Command {
             Channel::DbCmdReq
         }
     }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 }
 
 pub struct ProposalCommand(pub Command);
 
-impl PostMessage for ProposalCommand {
+impl LetterMessage for ProposalCommand {
     fn channel(&self) -> Channel {
         Channel::RaftProposal
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }

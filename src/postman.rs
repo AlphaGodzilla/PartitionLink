@@ -15,15 +15,28 @@ pub enum Channel {
     Discover,
 }
 
-pub trait PostMessage: Send + Sync + Any {
+pub trait LetterMessage: Send + Sync + Any {
     /// 消息的频道
     fn channel(&self) -> Channel;
+}
 
+pub trait AsAny {
     fn as_any(&self) -> &dyn Any;
 }
 
+impl<T: Any> AsAny for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+pub struct Envelope<T> {
+    pub inner: T
+}
+
+
 pub struct Postman {
-    channels: RwLock<AHashMap<Channel, Sender<Box<dyn PostMessage>>>>,
+    channels: RwLock<AHashMap<Channel, Sender<Box<dyn LetterMessage>>>>,
 }
 
 impl Postman {
@@ -39,7 +52,7 @@ impl Postman {
         &self,
         channel: Channel,
         buf_size: usize,
-    ) -> Option<Receiver<Box<dyn PostMessage>>> {
+    ) -> Option<Receiver<Box<dyn LetterMessage>>> {
         let exist = self.channels.read().await.contains_key(&channel);
         if exist {
             return None;
@@ -51,7 +64,7 @@ impl Postman {
     }
 
     /// 发送消息
-    pub async fn send(&self, message: Box<dyn PostMessage>) -> anyhow::Result<bool> {
+    pub async fn send(&self, message: Box<dyn LetterMessage>) -> anyhow::Result<bool> {
         if let Some(sender) = self.channels.read().await.get(&message.channel()) {
             sender.send(message).await?;
             return Ok(true);

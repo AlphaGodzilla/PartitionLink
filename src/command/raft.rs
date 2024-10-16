@@ -12,7 +12,7 @@ use std::fmt::{Display, Formatter};
 use super::proto::{ProtoCmd, ProtoCommand};
 
 use crate::postman::Channel;
-use crate::postman::PostMessage;
+use crate::postman::LetterMessage;
 use crate::runtime::Runtime;
 use protobuf::Message as PbMessage;
 use raft::prelude::Message;

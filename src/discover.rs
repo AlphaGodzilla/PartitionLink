@@ -1,4 +1,4 @@
-use crate::postman::PostMessage;
+use crate::postman::{AsAny, LetterMessage};
 use crate::runtime::Runtime;
 use crate::{
     config::Config,
@@ -6,6 +6,7 @@ use crate::{
 };
 use log::{error, info, trace};
 use socket2::{Domain, Protocol, Socket, Type};
+use std::any::{Any, TypeId};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ptr::hash;
 use std::{
@@ -168,7 +169,7 @@ pub fn start_discover(
     ctx: RefContext,
     cfg: Arc<Config>,
     node_manager: ShareNodeTable,
-    mut recv: Receiver<Box<dyn PostMessage>>,
+    mut recv: Receiver<Box<dyn LetterMessage>>,
 ) -> anyhow::Result<JoinHandle<()>> {
     let mut discover = Discover::new(cfg.clone());
     discover.start(app.clone(), ctx.clone())?;
@@ -204,7 +205,7 @@ pub fn start_discover(
 
 async fn on_ping_node(
     app: &Runtime,
-    recv: &mut Receiver<Box<dyn PostMessage>>,
+    recv: &mut Receiver<Box<dyn LetterMessage>>,
     node_manager: &mut ShareNodeTable,
 ) -> anyhow::Result<()> {
     if let Some(msg) = recv.recv().await {

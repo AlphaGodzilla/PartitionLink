@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::postman::{Channel, PostMessage};
+use crate::postman::{Channel, LetterMessage};
 use crate::until::now_ts;
 use ahash::{AHashMap, HashMap, HashMapExt, RandomState};
 use async_trait::async_trait;
@@ -55,24 +55,16 @@ impl Node {
     }
 }
 
-impl PostMessage for Node {
+impl LetterMessage for Node {
     fn channel(&self) -> Channel {
         Channel::Discover
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 pub struct ProposalAddNode(pub Node);
 
-impl PostMessage for ProposalAddNode {
+impl LetterMessage for ProposalAddNode {
     fn channel(&self) -> Channel {
         Channel::RaftProposal
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 

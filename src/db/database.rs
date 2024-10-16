@@ -6,7 +6,7 @@ use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_context::context::{Context, RefContext};
 
 use super::dbvalue::DBValue;
-use crate::postman::PostMessage;
+use crate::postman::{AsAny, LetterMessage};
 use crate::runtime::Runtime;
 use crate::{
     cluster::{self},
@@ -42,7 +42,7 @@ pub fn start_db_cmd_channel(
     app: Arc<Runtime>,
     ctx: RefContext,
     mut db: Database,
-    mut db_recv: mpsc::Receiver<Box<dyn PostMessage>>,
+    mut db_recv: mpsc::Receiver<Box<dyn LetterMessage>>,
 ) -> anyhow::Result<JoinHandle<()>> {
     let hander = tokio::spawn(async move {
         info!("Database channel thread startup");
