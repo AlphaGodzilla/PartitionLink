@@ -1,5 +1,4 @@
 use crate::cmd_server::connection;
-use crate::command::hello::HelloCmd;
 use crate::command::Command;
 use crate::protocol::frame::Frame;
 use log::debug;
@@ -7,6 +6,7 @@ use std::time::Duration;
 use tokio::net::TcpSocket;
 use tokio::sync::mpsc::Sender;
 use tokio_context::context::RefContext;
+use crate::proto::HelloCmd;
 
 mod cluster;
 mod cmd_server;

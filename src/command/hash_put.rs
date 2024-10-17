@@ -30,28 +30,23 @@ impl ExecutableCommand for HashPutCmd {
         db: Option<&mut Database>,
     ) -> anyhow::Result<Option<DBValue>> {
         if let Some(db) = db {
-            return match db.get_mut(&self.key) {
-                Some(value) => match value {
-                    DBValue::Hash(ref mut hash) => {
-                        if let Some(member_value) = &self.member_value {
-                            hash.insert(self.member_key.clone(), member_value.clone().into());
+            if let Some(member_value) = &self.member_value {
+                return match db.get_mut(&self.key) {
+                    Some(value) => match value {
+                        DBValue::Hash(ref mut hash) => {
+                            let old = hash.insert(self.member_key.clone(), member_value.clone().into());
+                            Ok(old)
                         }
-                        Ok(None)
-                    }
-                    _ => Err(anyhow!(
-                        "Mismatch DBValue type, required Hash but got {}",
-                        value
-                    )),
-                },
-                None => {
-                    if let Some(member_value) = &self.member_value {
+                        _ => Err(anyhow!("Mismatch DBValue type, required Hash but got {}",value)),
+                    },
+                    None => {
                         let mut hashmap = AHashMap::new();
                         hashmap.insert(self.member_key.clone(), member_value.clone().into());
                         db.set(self.key.clone(), DBValue::Hash(hashmap));
+                        Ok(None)
                     }
-                    Ok(None)
-                }
-            };
+                };
+            }
         }
         Ok(None)
     }
@@ -67,8 +62,7 @@ impl ExecutableCommand for HashPutCmd {
 impl Display for HashPutCmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(member_value) = &self.member_value {
-            let value: DBValue = member_value.clone().into();
-            write!(f, "HashPut {} {}", &self.key, &value)
+            write!(f, "HashPut {} {}", &self.key, member_value)
         } else {
             write!(f, "HashPut {} None", &self.key)
         }

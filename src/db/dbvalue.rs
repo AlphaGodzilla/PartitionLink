@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 
 use crate::proto::db_value::Value as DbValueEnum;
 use crate::proto::DbValue as PDbValue;
@@ -32,7 +32,7 @@ impl Display for DBValue {
                 write!(f, "DBValue::{}", &format!("Bytes({} bytes)", v.len()))?;
             }
             Self::List(v) => {
-                write!(f, "DBValue::List(",)?;
+                write!(f, "DBValue::List(", )?;
                 let mut iter = v.iter();
                 if let Some(first) = iter.next() {
                     write!(f, "{}", first)?;
@@ -43,17 +43,61 @@ impl Display for DBValue {
                 write!(f, ")")?;
             }
             Self::Hash(h) => {
-                write!(f, "DBValue::Hash(\n",)?;
+                write!(f, "DBValue::Hash(\n", )?;
                 let mut iter = h.iter();
                 if let Some((k, v)) = iter.next() {
-                    write!(f, "  {} = {}", k, v)?;
+                    write!(f, "{}={}", k, v)?;
                     for item in iter {
-                        write!(f, ",\n{}={}", k, v)?;
+                        write!(f, ",{}={}", k, v)?;
                     }
                 }
                 write!(f, ")")?;
             }
         };
+        Ok(())
+    }
+}
+
+impl Display for PDbValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(value) = &self.value {
+            match value {
+                DbValueEnum::None(v) => {
+                    write!(f, "DBValue::None")?;
+                }
+                DbValueEnum::Bool(v) => {
+                    write!(f, "DBValue::Boolean({})", v)?;
+                }
+                DbValueEnum::String(v) => {
+                    write!(f, "DBValue::String({})", v)?;
+                }
+                DbValueEnum::Bytes(v) => {
+                    write!(f, "DBValue::Bytes({} bytes)", v.len())?;
+                }
+                DbValueEnum::List(v) => {
+                    write!(f, "DBValue::List(", )?;
+                    let mut iter = v.value.iter();
+                    if let Some(first) = iter.next() {
+                        write!(f, "{}", first)?;
+                        for item in iter {
+                            write!(f, ",{}", item)?;
+                        }
+                    }
+                    write!(f, ")")?;
+                }
+                DbValueEnum::Hash(v) => {
+                    write!(f, "DBValue::Hash(\n", )?;
+                    let mut iter = v.values.iter();
+                    if let Some((k, v)) = iter.next() {
+                        write!(f, "{}={}", k, v)?;
+                        for item in iter {
+                            write!(f, ",{}={}", k, v)?;
+                        }
+                    }
+                    write!(f, ")")?;
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -67,7 +111,6 @@ impl From<DBValue> for PDbValue {
 impl DBValue {
     pub fn to_protobuf(&self) -> PDbValue {
         let value = match self {
-            // DBValue::None => Some(proto_db_value::Value::NoneDbValue(false)),
             DBValue::None => Some(DbValueEnum::None(false)),
             DBValue::Boolean(v) => Some(DbValueEnum::Bool(v.clone())),
             DBValue::String(v) => Some(DbValueEnum::String(v.clone())),
